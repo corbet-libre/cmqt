@@ -25,8 +25,9 @@ tile computes `v`, `d` (unit and decimals), `c` (threshold colour) and `s`:
 * `greyed`: greyed screens, never queried
 * `unknown`: no value, or VictoriaMetrics unreachable (then `_online` stays `online`)
 
-Publishing: retained, QoS 1, MQTT 5 message expiry 3 x `interval_s`, only when
-`d`, `c` or `s` changed. Everything is re-sent after a (re)connect. Each tree
+Publishing: retained, QoS 1, only when `d`, `c` or `s` changed (a tile's `t` is
+the time of its last change; nothing is re-sent periodically). Only `_online`
+carries a message expiry (3 x `interval_s`) and goes out every interval. Everything is re-sent after a (re)connect. Each tree
 has its own connection and its own retained last will on `_online`.
 `_layout` (grid from `gridPos`, links, topology), `_playlist` (issues first)
 and `_online` (every interval, with the generation id) are published as in §5.
@@ -71,14 +72,36 @@ restart, public/internal separation and the read-only public ACL.
 * Topology: one tile `topology/<device>` per node, from the firing alerts with that `host_name`; `greyed` for greyed nodes, none for planned nodes. The web client colours the SVG boxes with them.
 * The integration tests run against the real cgrf golden dashboards (`crates/cmqt-server/tests/fixtures/cgrf`, copied from cgrf commit in `FROM_CGRF_COMMIT`).
 
+## Liveness (contract §5)
+
+Liveness comes from `_online` alone. A client measures the time since it last
+RECEIVED `_online` on its own monotonic clock (`performance.now()`, or `Instant`
+in `cmqt::freshness`); more than 3 x `interval_s`, no `_online`, or a state other
+than `online` means "observability unreachable" over the whole board;
+`generation-mismatch` shows "updating". The server's clock is never compared.
+
+## Browser check
+
+`web/shots.mjs` runs the real client in headless Chromium against a real Mosquitto,
+the real `cmqt-server` and a fake VictoriaMetrics on the cgrf golden dashboards, and
+saves screenshots (1920x1080 and 390x844: device screen, overview, topology, public
+overview, and the board after the server is killed):
+
+```
+cargo build -p cmqt-server && (cd web && npm run build && node shots.mjs <out-dir>)
+```
+
+Notes: the page caps very tall panels at 12 grid rows; topology rows are squeezed to
+ranks within each group; on a phone the topology SVG scales down (small text).
+mqtt.js ships no smaller browser build (`mqtt.min.js` is the same size as the ESM build).
+
 ## CONTRACT QUESTIONs
+
+All earlier questions were answered by the contract (§5 liveness, §3 scope, §3b public
+panels, topology tiles). Open: none beyond these small choices.
 
 | # | Gap | Smallest choice made |
 |---|---|---|
-| 1 | §5 says a tile is published only on change and every message expires after 3 x `interval_s`; a quiet tile would expire from the broker and go stale in the client after 90 s. | Unchanged messages (tiles, layouts, playlist) are re-sent every `refresh_intervals` (default 2, max 2) intervals with a fresh `t`. `_online` is sent every interval as specified. |
-| 2 | How cmqt learns the rules' generation is not defined. | Config `prometheus_manifest` points at cprm's `prometheus/manifest.json`; its `generation` is compared each interval. An unreadable file counts as a mismatch. |
-| 3 | `d`, `c` and `v` for internal `unknown`/`greyed` tiles are not defined. | `v` null, `d` `n/a`, `c` `grey` (or the state colour when only the value is missing). |
-| 4 | Staleness compares the client clock with the server's `t`. | Implemented as written; a client clock off by more than 90 s shows "observability unreachable". |
-| 5 | The web client also treats an old `_online.t` as unreachable. | Added: `now - _online.t > 3 x interval_s` is stale. |
-| 6 | A device tile without `scope` is not covered. | Falls back to `host_name` = the screen name. |
-| 7 | Unknown scope value with a missing label on the alert. | A missing label never matches. |
+| 1 | `d`, `c` and `v` for internal `unknown`/`greyed` tiles. | `v` null, `d` `n/a`, `c` `grey` (or the state colour when only the value is missing). |
+| 2 | A device tile without `scope`. | Falls back to `host_name` = the screen name. |
+| 3 | An alert that lacks a scope label. | A missing label never matches. |

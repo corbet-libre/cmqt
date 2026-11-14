@@ -19,16 +19,15 @@ test("links are real urls on the same door and never from odd names", () => {
   assert.equal(screenUrl("a/b", "ch"), null);
 });
 
-test("staleness: offline, mismatch, age", () => {
+test("liveness: offline, mismatch, time since _online was received", () => {
   const on = { state: "online" as const, t: 1000, interval_s: 30 };
-  assert.equal(freshness(1010, 1000, on), "fresh");
-  assert.equal(freshness(1090, 1000, on), "fresh");
-  assert.equal(freshness(1091, 1000, { ...on, t: 1091 }), "unreachable", "tile older than 3 intervals");
-  assert.equal(freshness(1100, 1100, on), "unreachable", "_online itself is old");
-  assert.equal(freshness(1010, 1000, null), "unreachable");
-  assert.equal(freshness(1010, 1000, { state: "offline" }), "unreachable");
-  assert.equal(freshness(1010, 1000, { state: "generation-mismatch" }), "updating");
-  assert.equal(freshness(1010, null, on), "fresh", "no tile yet is not stale");
+  assert.equal(freshness(10_000, on), "fresh");
+  assert.equal(freshness(90_000, on), "fresh");
+  assert.equal(freshness(90_001, on), "unreachable");
+  assert.equal(freshness(null, on), "unreachable", "never received");
+  assert.equal(freshness(1000, null), "unreachable");
+  assert.equal(freshness(1000, { state: "offline" }), "unreachable");
+  assert.equal(freshness(1000, { state: "generation-mismatch" }), "updating");
 });
 
 test("colours map to classes", () => {

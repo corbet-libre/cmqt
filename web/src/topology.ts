@@ -6,7 +6,7 @@ import { screenUrl, type Tld } from "./logic.ts";
 export const BOX_W = 120;
 export const BOX_H = 44;
 const GAP_X = 24;
-const GAP_Y = 24;
+const GAP_Y = 30;
 const PAD = 16;
 const GROUP_HEAD = 22;
 const GROUP_ORDER = ["helsinki", "frankfurt", "home", "outposts", "vultr"];
@@ -41,14 +41,16 @@ export function layoutTopology(t: Topology): Shape {
   let width = 2 * PAD;
   for (const g of groups) {
     const nodes = t.nodes.filter((n) => n.group === g);
-    const rows = Math.max(...nodes.map((n) => n.row)) + 1;
+    // Empty rows are squeezed out: rows are ranks within the group.
+    const rowIds = [...new Set(nodes.map((n) => n.row))].sort((a, b) => a - b);
+    const rows = rowIds.length;
     groupLabels.push({ name: g, x: PAD, y: y + 14 });
     const top = y + GROUP_HEAD;
     for (const n of nodes) {
       boxes.push({
         device: n.device,
         x: PAD + n.col * (BOX_W + GAP_X),
-        y: top + n.row * (BOX_H + GAP_Y),
+        y: top + rowIds.indexOf(n.row) * (BOX_H + GAP_Y),
         planned: n.planned === true,
         greyed: n.greyed === true,
       });
@@ -102,7 +104,7 @@ export function drawTopology(t: Topology, tld: Tld): SVGSVGElement {
   }) as SVGSVGElement;
   for (const b of s.brackets) {
     svg.append(el("rect", { x: b.x, y: b.y, width: b.w, height: b.h, rx: 8, class: "bracket" }));
-    const label = el("text", { x: b.x + 6, y: b.y - 2, class: "bracket-label" });
+    const label = el("text", { x: b.x + b.w - 6, y: b.y + b.h + 12, "text-anchor": "end", class: "bracket-label" });
     label.textContent = b.name;
     svg.append(label);
   }

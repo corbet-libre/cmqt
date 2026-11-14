@@ -79,7 +79,7 @@ a.tile:hover, a.tile:focus-visible { border-color: var(--fg); outline: none; }
 #overlay[hidden] { display: none; }
 .blanked { visibility: hidden; }
 
-.topology { width: 100%; max-width: 900px; height: auto; margin-bottom: 16px; }
+.topology { width: 100%; max-width: 1400px; height: auto; margin-bottom: 16px; }
 .topology .node { fill: var(--tile); stroke: var(--fg); stroke-width: 1.5; }
 .topology .node.planned { stroke-dasharray: 5 4; }
 .topology .node.greyed { opacity: .55; }

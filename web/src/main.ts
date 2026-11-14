@@ -25,6 +25,7 @@ const host: HostInfo | null =
 const brokerUrl = q.get("broker") ?? `wss://${location.host}`;
 
 let online: Online | null = null;
+let onlineAt: number | null = null; // performance.now() at the last _online
 let layout: Layout | null = null;
 const tiles = new Map<string, TileMsg>();
 const nodes = new Map<string, HTMLElement>();
@@ -49,7 +50,8 @@ function buildTile(t: Layout["tiles"][number], tld: HostInfo["tld"]): HTMLElemen
   root.style.setProperty("--x", String(t.grid.x));
   root.style.setProperty("--y", String(t.grid.y));
   root.style.setProperty("--w", String(t.grid.w));
-  root.style.setProperty("--h", String(t.grid.h));
+  // Very tall panels are capped: the board is a status view, not a canvas.
+  root.style.setProperty("--h", String(Math.min(t.grid.h, 12)));
   const title = document.createElement("span");
   title.className = "tile-title";
   title.textContent = t.title;
@@ -109,12 +111,11 @@ function paintTile(id: string): void {
   mark.hidden = m.s !== "issue";
 }
 
-/** Re-evaluate staleness; runs on every message and once a second. */
+/** Re-evaluate liveness; runs on every message and once a second. */
 function evaluate(): void {
   if (!connected) return showOverlay("observability unreachable");
-  const oldest = [...tiles.values()].reduce<number | null>((o, m) => (o === null ? m.t : Math.min(o, m.t)), null);
-  // The oldest tile decides: one stale tile means the board cannot be trusted.
-  const f = freshness(now(), oldest, online);
+  const since = onlineAt === null ? null : performance.now() - onlineAt;
+  const f = freshness(since, online);
   if (f === "unreachable") showOverlay("observability unreachable");
   else if (f === "updating") showOverlay("updating");
   else showOverlay(null);
@@ -134,6 +135,7 @@ function main(): void {
   });
   const down = (): void => {
     connected = false;
+    onlineAt = null; // a retained _online after a reconnect must not look live
     evaluate();
   };
   client.on("close", down);
@@ -148,6 +150,7 @@ function main(): void {
     }
     if (topic === "_online") {
       online = data as Online;
+      onlineAt = performance.now();
     } else if (topic === `${host.screen}/_layout`) {
       layout = data as Layout;
       renderLayout(layout, host);

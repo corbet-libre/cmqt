@@ -87,16 +87,17 @@ export function screenUrl(screen: string, tld: Tld): string | null {
 
 export type Freshness = "fresh" | "unreachable" | "updating";
 
-/** Stale when now - t > 3 x interval_s or _online is not "online" (contract §5). */
-export function freshness(now: number, tileT: number | null, online: Online | null): Freshness {
-  if (!online) return "unreachable";
+/**
+ * Liveness comes from `_online` alone (contract §5). `sinceOnlineMs` is the time
+ * since `_online` was last RECEIVED, on the browser's monotonic clock
+ * (performance.now()); the server's clock is never compared.
+ */
+export function freshness(sinceOnlineMs: number | null, online: Online | null): Freshness {
+  if (!online || sinceOnlineMs === null) return "unreachable";
   if (online.state === "offline") return "unreachable";
   if (online.state === "generation-mismatch") return "updating";
   const interval = online.interval_s ?? 0;
-  if (interval <= 0) return "unreachable";
-  if (tileT !== null && now - tileT > 3 * interval) return "unreachable";
-  // _online itself is published every interval: if it is old, the server is gone.
-  if (online.t !== undefined && now - online.t > 3 * interval) return "unreachable";
+  if (interval <= 0 || sinceOnlineMs > 3 * interval * 1000) return "unreachable";
   return "fresh";
 }
 
