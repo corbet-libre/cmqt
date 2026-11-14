@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = ["crates/cmqt", "crates/cmqt-server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
+repository = "https://github.com/corbet-libre/cmqt"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

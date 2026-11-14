@@ -1,0 +1,21 @@
+[package]
+name = "cmqt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Payload types, topics and staleness rule for the Corbet status board over MQTT"
+keywords = ["mqtt", "status", "observability"]
+categories = ["data-structures"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rumqttc = { version = "0.25", optional = true }
+
+[features]
+# Optional MQTT subscribe helper for clients (kiosk renderer).
+client = ["dep:rumqttc"]
+
+[lints]
+workspace = true

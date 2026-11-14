@@ -1,0 +1,19 @@
+[package]
+name = "cmqt-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Status board server: dashboards + VictoriaMetrics in, MQTT topics out"
+
+[dependencies]
+cmqt = { path = "../cmqt", features = ["client"] }
+rumqttc = "0.25"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal", "sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+ureq = { version = "3", features = ["json"] }
+
+[lints]
+workspace = true
