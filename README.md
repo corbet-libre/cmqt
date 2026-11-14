@@ -69,7 +69,7 @@ restart, public/internal separation and the read-only public ACL.
 * Alerts match on `alertname` in the panel's `alerts` AND every label of its `scope` (a value may be a list, any of).
 * Device tiles: `issue` on a match, `ok` with a value, else `unknown`. Aggregate tiles (site, overview, topology): the state comes from the match alone; their value is shown on the internal tree only.
 * Public tree: state only. `v` null, `d` is `OK`, `Issue` or `No data`, colour from the state. Public panels mirror the internal series through their `record` labels.
-* Never green without data (contract section 3): an aggregate tile or topology node is `unknown`, not `ok`, while any non-greyed device it stands for (its `host_name` scope, or the devices of the site screen it links to) has no live `alive` value, until an alert fires (`issue`). Device tiles without a value are `unknown`.
+* An aggregate tile whose devices are all greyed is `greyed`. Never green without data (contract section 3): an aggregate tile or topology node is `unknown`, not `ok`, while any non-greyed device it stands for (its `host_name` scope, or the devices of the site screen it links to) has no live `alive` value, until an alert fires (`issue`). Device tiles without a value are `unknown`.
 * Topology: one tile `topology/<device>` per node, from the firing alerts with that `host_name`; `greyed` for greyed nodes, none for planned nodes. The web client colours the SVG boxes with them.
 * The integration tests run against the real cgrf golden dashboards (`crates/cmqt-server/tests/fixtures/cgrf`, copied from cgrf commit in `FROM_CGRF_COMMIT`).
 

@@ -161,8 +161,7 @@ fn evaluate(
                 tile,
                 vmres.map(|r| &r.0),
                 vmres.map(|r| &r.1),
-                !screen.greyed
-                    && engine::aggregate_lacks_data(tree_board, tile, vmres.map(|r| &r.0)),
+                engine::aggregate_coverage(tree_board, tile, vmres.map(|r| &r.0)),
                 now,
             );
             if !mismatch {

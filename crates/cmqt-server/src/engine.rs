@@ -128,12 +128,27 @@ fn scoped_devices(tree: &TreeBoard, tile: &TileDef) -> Vec<String> {
         .collect()
 }
 
-/// Never green without data (contract section 3, `scope`): an aggregate tile is without data when any
-/// non-greyed device it stands for has no live `alive` value.
-pub fn aggregate_lacks_data(tree: &TreeBoard, tile: &TileDef, samples: Option<&Samples>) -> bool {
-    scoped_devices(tree, tile)
-        .iter()
-        .any(|d| device_lacks_alive(tree, d, samples))
+/// What an aggregate tile's devices give it (contract section 3, `scope`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Coverage {
+    /// Every non-greyed device has a live `alive` value (or the tile stands for none).
+    Live,
+    /// Never green without data: some non-greyed device has no live `alive` value.
+    NoData,
+    /// Every device it stands for is greyed (not collected): the tile is greyed too.
+    AllGreyed,
+}
+
+pub fn aggregate_coverage(tree: &TreeBoard, tile: &TileDef, samples: Option<&Samples>) -> Coverage {
+    let devices = scoped_devices(tree, tile);
+    let greyed = |d: &String| tree.screens.iter().any(|s| &s.name == d && s.greyed);
+    if !devices.is_empty() && devices.iter().all(greyed) {
+        Coverage::AllGreyed
+    } else if devices.iter().any(|d| device_lacks_alive(tree, d, samples)) {
+        Coverage::NoData
+    } else {
+        Coverage::Live
+    }
 }
 
 /// Same rule for one topology node.
@@ -142,7 +157,7 @@ pub fn node_lacks_data(tree: &TreeBoard, device: &str, samples: Option<&Samples>
 }
 
 /// Compute one tile. `samples`/`firing` are `None` when VictoriaMetrics could
-/// not be queried. `no_data`: an aggregate tile whose devices lack live data (`aggregate_lacks_data`).
+/// not be queried. `coverage`: see `aggregate_coverage` (only aggregate tiles read it).
 ///
 /// * Device tiles: `issue` when a scoped alert fires, `ok` with a value,
 ///   otherwise `unknown`.
@@ -155,7 +170,7 @@ pub fn compute_tile(
     tile: &TileDef,
     samples: Option<&Samples>,
     firing: Option<&Firing>,
-    no_data: bool,
+    coverage: Coverage,
     now: u64,
 ) -> TileMsg {
     if screen.greyed {
@@ -178,8 +193,10 @@ pub fn compute_tile(
     let aggregate = screen.kind != "device";
     let state = if issue {
         TileState::Issue
+    } else if aggregate && coverage == Coverage::AllGreyed {
+        TileState::Greyed
     } else if aggregate {
-        if firing.is_some() && !no_data {
+        if firing.is_some() && coverage == Coverage::Live {
             TileState::Ok
         } else {
             TileState::Unknown
@@ -415,7 +432,7 @@ mod tests {
     }
 
     fn calc(tree: Tree, sc: &Screen, sm: Option<&Samples>, f: Option<&Firing>) -> TileMsg {
-        compute_tile(tree, sc, &sc.tiles[0], sm, f, false, 100)
+        compute_tile(tree, sc, &sc.tiles[0], sm, f, Coverage::Live, 100)
     }
 
     #[test]
@@ -678,13 +695,14 @@ mod tests {
         };
         let sm = samples("srv", "alive", 1.0);
         let t = &tb.screens[2].tiles[0];
-        assert!(
-            aggregate_lacks_data(&tb, t, Some(&sm)),
+        assert_eq!(
+            aggregate_coverage(&tb, t, Some(&sm)),
+            Coverage::NoData,
             "fra-0 has no alive value"
         );
         let mut both = samples("srv", "alive", 1.0);
         both.insert("fra-0", "alive", 1.0);
-        assert!(!aggregate_lacks_data(&tb, t, Some(&both)));
+        assert_eq!(aggregate_coverage(&tb, t, Some(&both)), Coverage::Live);
         // the aggregate tile is unknown (not ok) when no alert fires and data is missing, an issue when one fires
         let f = Firing::default();
         let m = compute_tile(
@@ -693,7 +711,7 @@ mod tests {
             t,
             Some(&sm),
             Some(&f),
-            true,
+            Coverage::NoData,
             1,
         );
         assert_eq!(m.s, TileState::Unknown);
@@ -705,7 +723,7 @@ mod tests {
                 t,
                 Some(&sm),
                 Some(&fa),
-                true,
+                Coverage::NoData,
                 1
             )
             .s,
@@ -726,7 +744,7 @@ mod tests {
             &tb.screens[2].tiles[0],
             Some(&with_value),
             Some(&f),
-            true,
+            Coverage::NoData,
             1,
         );
         assert_eq!((m.s, m.c.as_str()), (TileState::Unknown, "grey"));
@@ -734,6 +752,67 @@ mod tests {
         assert_eq!(get("fra-0"), Some(TileState::Unknown));
         // no samples at all: every device lacks data
         assert!(node_lacks_data(&tb, "srv", None));
+    }
+
+    #[test]
+    fn aggregate_of_only_greyed_devices_is_greyed() {
+        // Charleston: the site screen holds one tile, for e2-micro, which is greyed (not collected)
+        let site = screen(
+            "site.chs",
+            "site",
+            false,
+            vec![tile(
+                "e2",
+                &["DeviceDown"],
+                &[("host_name", &["e2-micro"])],
+                Some("e2-micro"),
+            )],
+        );
+        let e2 = screen("e2-micro", "device", true, vec![]);
+        let ov = screen(
+            "overview",
+            "overview",
+            false,
+            vec![tile(
+                "chs",
+                &["DeviceDown"],
+                &[("site", &["0x3D"])],
+                Some("site.chs"),
+            )],
+        );
+        let tb = TreeBoard {
+            screens: vec![site, e2, ov],
+        };
+        let t = &tb.screens[2].tiles[0];
+        let sm = samples("srv", "alive", 1.0);
+        let cov = aggregate_coverage(&tb, t, Some(&sm));
+        assert_eq!(cov, Coverage::AllGreyed);
+        let f = Firing::default();
+        let m = compute_tile(
+            Tree::Internal,
+            &tb.screens[2],
+            t,
+            Some(&sm),
+            Some(&f),
+            cov,
+            1,
+        );
+        assert_eq!((m.s, m.c.as_str()), (TileState::Greyed, "grey"));
+        // a firing alert still wins
+        let fa = firing(&[Alert::new("DeviceDown", &[("site", "0x3D")])]);
+        assert_eq!(
+            compute_tile(
+                Tree::Internal,
+                &tb.screens[2],
+                t,
+                Some(&sm),
+                Some(&fa),
+                cov,
+                1
+            )
+            .s,
+            TileState::Issue
+        );
     }
 
     #[test]
