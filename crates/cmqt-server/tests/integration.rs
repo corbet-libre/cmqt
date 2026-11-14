@@ -182,6 +182,11 @@ impl Vm {
                         m("archlxc", "ram", "40"),
                         m("overview", "home", "0"),
                     ];
+                    // every Helsinki device is alive; nothing else is (fra-0, vultr, archlxc have no `alive`)
+                    let r: Vec<_> = r
+                        .into_iter()
+                        .chain((0..7).map(|i| m(&format!("cld-{i}"), "alive", "1")))
+                        .collect();
                     (
                         "200 OK",
                         json!({"status":"success","data":{"resultType":"vector","result":r}})
@@ -386,6 +391,19 @@ async fn topics_retention_and_public_isolation() {
     );
     assert_eq!(
         all.last("internal/overview/hel_pmd").unwrap().payload["s"],
+        "ok"
+    );
+    // never green without data: no alert fires for the vultr site, but its device has no `alive` value
+    assert_eq!(
+        all.last("internal/overview/fra_vtr").unwrap().payload["s"],
+        "unknown"
+    );
+    assert_eq!(
+        all.last("internal/topology/vultr").unwrap().payload["s"],
+        "unknown"
+    );
+    assert_eq!(
+        all.last("internal/topology/cld-0").unwrap().payload["s"],
         "ok"
     );
     assert_eq!(

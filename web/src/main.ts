@@ -81,6 +81,8 @@ function renderLayout(l: Layout, h: HostInfo): void {
     app.append(topologySvg);
   }
   for (const t of stackOrder(l.tiles)) {
+    // the topology screen's one canvas tile only carries the aggregate state; the SVG above is its picture
+    if (l.topology && t.id === l.screen) continue;
     const n = buildTile(t, h.tld);
     nodes.set(t.id, n);
     board.append(n);

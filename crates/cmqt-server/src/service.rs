@@ -161,6 +161,8 @@ fn evaluate(
                 tile,
                 vmres.map(|r| &r.0),
                 vmres.map(|r| &r.1),
+                !screen.greyed
+                    && engine::aggregate_lacks_data(tree_board, tile, vmres.map(|r| &r.0)),
                 now,
             );
             if !mismatch {
@@ -170,7 +172,12 @@ fn evaluate(
             msgs.push(m);
         }
         if let Some(topo) = &lay.topology {
-            for (device, m) in engine::topology_tiles(topo, vmres.map(|r| &r.1), now) {
+            for (device, m) in engine::topology_tiles(
+                topo,
+                vmres.map(|r| &r.1),
+                &|d| engine::node_lacks_data(tree_board, d, vmres.map(|r| &r.0)),
+                now,
+            ) {
                 if !mismatch {
                     let fp = engine::tile_fingerprint(&m);
                     link.put(&topic::tile(&screen.name, &device), &m, &fp);

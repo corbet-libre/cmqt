@@ -95,8 +95,54 @@ fn state_only(s: TileState, now: u64) -> TileMsg {
     }
 }
 
+/// Does this device have no live `alive` value? A greyed screen is "not collected" and is not asked.
+fn device_lacks_alive(tree: &TreeBoard, device: &str, samples: Option<&Samples>) -> bool {
+    if tree.screens.iter().any(|s| s.name == device && s.greyed) {
+        return false;
+    }
+    samples.is_none_or(|s| s.get(device, "alive").is_none())
+}
+
+/// The devices an aggregate tile stands for: its `host_name` scope, else the devices of the
+/// screen it links to (site screen: one tile per device), one level deep.
+fn scoped_devices(tree: &TreeBoard, tile: &TileDef) -> Vec<String> {
+    if let Some(h) = tile.scope.get("host_name") {
+        return h.clone();
+    }
+    let Some(target) = tile
+        .link
+        .as_deref()
+        .and_then(|l| tree.screens.iter().find(|s| s.name == l))
+    else {
+        return vec![];
+    };
+    if target.kind == "device" {
+        return vec![target.name.clone()];
+    }
+    target
+        .tiles
+        .iter()
+        .filter_map(|t| t.scope.get("host_name"))
+        .flatten()
+        .cloned()
+        .collect()
+}
+
+/// Never green without data (contract section 3, `scope`): an aggregate tile is without data when any
+/// non-greyed device it stands for has no live `alive` value.
+pub fn aggregate_lacks_data(tree: &TreeBoard, tile: &TileDef, samples: Option<&Samples>) -> bool {
+    scoped_devices(tree, tile)
+        .iter()
+        .any(|d| device_lacks_alive(tree, d, samples))
+}
+
+/// Same rule for one topology node.
+pub fn node_lacks_data(tree: &TreeBoard, device: &str, samples: Option<&Samples>) -> bool {
+    device_lacks_alive(tree, device, samples)
+}
+
 /// Compute one tile. `samples`/`firing` are `None` when VictoriaMetrics could
-/// not be queried.
+/// not be queried. `no_data`: an aggregate tile whose devices lack live data (`aggregate_lacks_data`).
 ///
 /// * Device tiles: `issue` when a scoped alert fires, `ok` with a value,
 ///   otherwise `unknown`.
@@ -109,6 +155,7 @@ pub fn compute_tile(
     tile: &TileDef,
     samples: Option<&Samples>,
     firing: Option<&Firing>,
+    no_data: bool,
     now: u64,
 ) -> TileMsg {
     if screen.greyed {
@@ -132,7 +179,7 @@ pub fn compute_tile(
     let state = if issue {
         TileState::Issue
     } else if aggregate {
-        if firing.is_some() {
+        if firing.is_some() && !no_data {
             TileState::Ok
         } else {
             TileState::Unknown
@@ -168,6 +215,7 @@ pub fn compute_tile(
 pub fn topology_tiles(
     topology: &serde_json::Value,
     firing: Option<&Firing>,
+    no_data: &dyn Fn(&str) -> bool,
     now: u64,
 ) -> Vec<(String, TileMsg)> {
     let Some(nodes) = topology.get("nodes").and_then(serde_json::Value::as_array) else {
@@ -187,6 +235,7 @@ pub fn topology_tiles(
                 match firing {
                     None => TileState::Unknown,
                     Some(f) if f.device_has_alert(device) => TileState::Issue,
+                    Some(_) if no_data(device) => TileState::Unknown,
                     Some(_) => TileState::Ok,
                 }
             };
@@ -361,7 +410,7 @@ mod tests {
     }
 
     fn calc(tree: Tree, sc: &Screen, sm: Option<&Samples>, f: Option<&Firing>) -> TileMsg {
-        compute_tile(tree, sc, &sc.tiles[0], sm, f, 100)
+        compute_tile(tree, sc, &sc.tiles[0], sm, f, false, 100)
     }
 
     #[test]
@@ -586,17 +635,118 @@ mod tests {
     }
 
     #[test]
+    fn never_green_without_data() {
+        // overview tile -> site screen -> device screens: srv has an `alive` value, fra-0 has none, office is greyed
+        let site = screen(
+            "site.x",
+            "site",
+            false,
+            vec![
+                tile(
+                    "srv",
+                    &["DeviceDown"],
+                    &[("host_name", &["srv"])],
+                    Some("srv"),
+                ),
+                tile(
+                    "fra_0",
+                    &["DeviceDown"],
+                    &[("host_name", &["fra-0"])],
+                    Some("fra-0"),
+                ),
+            ],
+        );
+        let office = screen("office", "device", true, vec![]);
+        let ov = screen(
+            "overview",
+            "overview",
+            false,
+            vec![tile(
+                "x",
+                &["DeviceDown"],
+                &[("site", &["0x20"])],
+                Some("site.x"),
+            )],
+        );
+        let tb = TreeBoard {
+            screens: vec![site, office, ov],
+        };
+        let sm = samples("srv", "alive", 1.0);
+        let t = &tb.screens[2].tiles[0];
+        assert!(
+            aggregate_lacks_data(&tb, t, Some(&sm)),
+            "fra-0 has no alive value"
+        );
+        let mut both = samples("srv", "alive", 1.0);
+        both.insert("fra-0", "alive", 1.0);
+        assert!(!aggregate_lacks_data(&tb, t, Some(&both)));
+        // the aggregate tile is unknown (not ok) when no alert fires and data is missing, an issue when one fires
+        let f = Firing::default();
+        let m = compute_tile(
+            Tree::Internal,
+            &tb.screens[2],
+            t,
+            Some(&sm),
+            Some(&f),
+            true,
+            1,
+        );
+        assert_eq!(m.s, TileState::Unknown);
+        let fa = firing(&[Alert::new("DeviceDown", &[("site", "0x20")])]);
+        assert_eq!(
+            compute_tile(
+                Tree::Internal,
+                &tb.screens[2],
+                t,
+                Some(&sm),
+                Some(&fa),
+                true,
+                1
+            )
+            .s,
+            TileState::Issue
+        );
+        // a greyed device is not asked; a topology node without data is unknown, with data ok
+        assert!(!node_lacks_data(&tb, "office", Some(&sm)));
+        assert!(node_lacks_data(&tb, "fra-0", Some(&sm)));
+        let topo = json!({"nodes":[{"device":"srv"},{"device":"fra-0"}]});
+        let t = topology_tiles(&topo, Some(&f), &|d| node_lacks_data(&tb, d, Some(&sm)), 5);
+        let get = |d: &str| t.iter().find(|(n, _)| n == d).map(|(_, m)| m.s);
+        assert_eq!(get("srv"), Some(TileState::Ok));
+        assert_eq!(get("fra-0"), Some(TileState::Unknown));
+        // no samples at all: every device lacks data
+        assert!(node_lacks_data(&tb, "srv", None));
+    }
+
+    #[test]
+    fn device_tile_without_value_is_unknown() {
+        let sc = screen(
+            "fra-0",
+            "device",
+            false,
+            vec![tile("alive", &[], &[("host_name", &["fra-0"])], None)],
+        );
+        let m = calc(
+            Tree::Internal,
+            &sc,
+            Some(&Samples::default()),
+            Some(&Firing::default()),
+        );
+        assert_eq!((m.s, m.c.as_str()), (TileState::Unknown, "grey"));
+    }
+
+    #[test]
     fn topology_node_tiles() {
         let topo = json!({"nodes":[
             {"device":"srv"},{"device":"fra-0"},{"device":"fra-3","planned":true},{"device":"office","greyed":true}]});
         let f = firing(&[Alert::new("DeviceDown", &[("host_name", "fra-0")])]);
-        let t = topology_tiles(&topo, Some(&f), 5);
+        let t = topology_tiles(&topo, Some(&f), &|_| false, 5);
         let get = |d: &str| t.iter().find(|(x, _)| x == d).map(|(_, m)| m.clone());
         assert_eq!(get("srv").unwrap().d, "OK");
         assert_eq!(get("fra-0").unwrap().s, TileState::Issue);
         assert!(get("fra-3").is_none(), "planned nodes get no tile");
         assert_eq!(get("office").unwrap().s, TileState::Greyed);
-        let none = topology_tiles(&topo, None, 5);
+        let none = topology_tiles(&topo, None, &|_| false, 5);
         assert_eq!(
             none.iter().find(|(x, _)| x == "srv").unwrap().1.s,
             TileState::Unknown
