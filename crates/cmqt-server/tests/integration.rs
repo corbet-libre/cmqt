@@ -367,12 +367,6 @@ async fn topics_retention_and_public_isolation() {
     assert_eq!(ram.payload["d"], "63.0 %");
     assert_eq!(ram.payload["s"], "ok");
     assert!(ram.payload["t"].as_u64().unwrap() > 1_700_000_000);
-    // message expiry = 3 x interval (remaining time may already be lower)
-    assert!(
-        ram.expiry.is_some_and(|e| (1..=6).contains(&e)),
-        "expiry {:?}",
-        ram.expiry
-    );
     // aggregate state comes from the alert match, scoped by site and host
     assert_eq!(
         all.last("internal/overview/home").unwrap().payload["s"],
@@ -529,13 +523,12 @@ async fn publishes_on_change_only_and_refreshes() {
     );
     // _online goes out every interval
     assert!(online_count(&w, "internal") >= 2);
-    // after the refresh period the unchanged tile is re-sent with a new t
-    w.wait_for("refresh of the unchanged tile", |w| {
-        w.on("internal/srv/disk").len() >= 2
-    })
-    .await;
-    let disk = w.on("internal/srv/disk");
-    assert!(disk[1].payload["t"].as_u64() > disk[0].payload["t"].as_u64());
+    // a quiet board stays quiet: no periodic re-send of unchanged tiles
+    w.wait_for("third _online", |w| online_count(w, "internal") >= 3)
+        .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(w.on("internal/srv/disk").len(), 1);
+    assert_eq!(w.on("internal/srv/ram").len(), 2);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -570,14 +563,18 @@ async fn last_will_on_kill_and_expiry() {
     })
     .await;
 
-    // everything carries a 3 s expiry (interval 1 s): after 5 s the board is gone
+    // _online carries a 3 s expiry (interval 1 s) and is gone after 5 s, the
+    // retained will with it; tiles, layouts and playlists have no expiry.
     tokio::time::sleep(Duration::from_secs(5)).await;
     let gone = Watcher::new(broker.port, "#").await;
+    gone.wait_for("tiles survive", |w| {
+        w.last("internal/srv/ram").is_some() && w.last("public/_playlist").is_some()
+    })
+    .await;
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert!(
-        gone.all().is_empty(),
-        "expired messages must not survive: {:?}",
-        gone.all().iter().map(|m| &m.topic).collect::<Vec<_>>()
+        gone.all().iter().all(|m| !m.topic.ends_with("_online")),
+        "expired _online must not survive"
     );
 }
 
@@ -674,7 +671,7 @@ async fn republishes_everything_after_broker_restart() {
     let (p, mp) = (free_port(), free_port());
     let mut broker = Broker::start(&dir, p, mp);
     let vm = Vm::start();
-    let _server = Server::start(&dir, broker.port, &vm, 1, "refresh_intervals = 2");
+    let _server = Server::start(&dir, broker.port, &vm, 1, "");
     let w = Watcher::new(broker.port, "internal/srv/_layout").await;
     w.wait_for("layout", |w| w.last("internal/srv/_layout").is_some())
         .await;

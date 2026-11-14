@@ -12,5 +12,3 @@ interval_s = 30
 # cprm output. When set, its generation must equal the dashboards' generation,
 # otherwise _online says "generation-mismatch" and no tile values go out.
 prometheus_manifest = "/var/lib/obs/prometheus/manifest.json"
-# Unchanged tiles are re-sent every N intervals (1 or 2), see README Q1.
-refresh_intervals = 2

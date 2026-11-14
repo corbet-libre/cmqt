@@ -270,10 +270,10 @@ fn scrub_topology(t: &serde_json::Value, tree: &TreeBoard) -> serde_json::Value 
     out
 }
 
-/// Publish decisions. Tracks the last published payload per topic.
+/// Publish decisions: tracks the last published fingerprint per topic.
 #[derive(Debug, Default)]
 pub struct Tracker {
-    last: HashMap<String, (String, u64)>,
+    last: HashMap<String, String>,
 }
 
 impl Tracker {
@@ -282,24 +282,13 @@ impl Tracker {
         self.last.clear();
     }
 
-    /// Publish when `fingerprint` differs from the last published one, or the
-    /// last publish is `refresh_s` old (so retained messages never expire
-    /// while the board is quiet).
-    pub fn should_publish(
-        &mut self,
-        topic: &str,
-        fingerprint: &str,
-        now: u64,
-        refresh_s: u64,
-    ) -> bool {
-        let publish = match self.last.get(topic) {
-            None => true,
-            Some((f, at)) => f != fingerprint || now.saturating_sub(*at) >= refresh_s,
-        };
-        if publish {
-            self.last.insert(topic.into(), (fingerprint.into(), now));
+    /// Publish only when `fingerprint` differs from the last published one.
+    pub fn should_publish(&mut self, topic: &str, fingerprint: &str) -> bool {
+        if self.last.get(topic).is_some_and(|f| f == fingerprint) {
+            return false;
         }
-        publish
+        self.last.insert(topic.into(), fingerprint.into());
+        true
     }
 }
 
@@ -631,19 +620,15 @@ mod tests {
     }
 
     #[test]
-    fn tracker_publishes_on_change_and_refresh_only() {
+    fn tracker_publishes_on_change_only() {
         let mut t = Tracker::default();
-        assert!(t.should_publish("a", "x", 100, 60));
-        assert!(!t.should_publish("a", "x", 110, 60), "unchanged");
-        assert!(t.should_publish("a", "y", 111, 60), "changed");
-        assert!(!t.should_publish("a", "y", 150, 60));
-        assert!(
-            t.should_publish("a", "y", 171, 60),
-            "refresh keeps the message alive"
-        );
+        assert!(t.should_publish("a", "x"));
+        assert!(!t.should_publish("a", "x"), "unchanged");
+        assert!(t.should_publish("a", "y"), "changed");
+        assert!(!t.should_publish("a", "y"));
         t.clear();
         assert!(
-            t.should_publish("a", "y", 172, 60),
+            t.should_publish("a", "y"),
             "after reconnect everything goes out"
         );
     }

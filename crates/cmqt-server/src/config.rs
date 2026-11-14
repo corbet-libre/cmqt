@@ -23,11 +23,6 @@ pub struct Config {
     /// the dashboards' (contract §1).
     #[serde(default)]
     pub prometheus_manifest: Option<PathBuf>,
-    /// Unchanged tiles are re-published every this many intervals so that the
-    /// 3 x interval message expiry and staleness rule never trip on a quiet
-    /// board. Must stay below 3. See README (CONTRACT QUESTION 1).
-    #[serde(default = "default_refresh")]
-    pub refresh_intervals: u64,
 }
 
 fn default_host() -> String {
@@ -38,9 +33,6 @@ fn default_port() -> u16 {
 }
 fn default_interval() -> u64 {
     30
-}
-fn default_refresh() -> u64 {
-    2
 }
 
 impl Config {
@@ -53,9 +45,6 @@ impl Config {
         let c: Config = toml::from_str(text).map_err(|e| e.to_string())?;
         if c.interval_s == 0 {
             return Err("interval_s must be > 0".into());
-        }
-        if c.refresh_intervals == 0 || c.refresh_intervals >= 3 {
-            return Err("refresh_intervals must be 1 or 2".into());
         }
         Ok(c)
     }
@@ -70,7 +59,6 @@ mod tests {
         let c = Config::parse("dashboards_dir='/d'\nvictoria_url='http://x'").unwrap();
         assert_eq!(c.interval_s, 30);
         assert_eq!(c.broker_port, 1883);
-        assert_eq!(c.refresh_intervals, 2);
     }
 
     #[test]

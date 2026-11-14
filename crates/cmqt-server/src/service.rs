@@ -69,11 +69,12 @@ impl Link {
         }
     }
 
-    /// Queue a retained QoS 1 publish with message expiry. A full queue (broker
-    /// down) drops the message: the reconnect republishes everything.
+    /// Queue a retained QoS 1 publish. Only `_online` carries a message expiry
+    /// (3 x interval); everything else lives until it changes. A full queue
+    /// (broker down) drops the message: the reconnect republishes everything.
     fn publish(&self, rel_topic: &str, payload: Vec<u8>) {
         let props = PublishProperties {
-            message_expiry_interval: Some(self.expiry),
+            message_expiry_interval: (rel_topic == topic::ONLINE).then_some(self.expiry),
             ..Default::default()
         };
         let topic = format!("{}{}", self.tree.prefix(), rel_topic);
@@ -85,17 +86,8 @@ impl Link {
         }
     }
 
-    fn put<T: serde::Serialize>(
-        &mut self,
-        rel_topic: &str,
-        value: &T,
-        fingerprint: &str,
-        now: u64,
-        refresh: u64,
-    ) {
-        if self
-            .tracker
-            .should_publish(rel_topic, fingerprint, now, refresh)
+    fn put<T: serde::Serialize>(&mut self, rel_topic: &str, value: &T, fingerprint: &str) {
+        if self.tracker.should_publish(rel_topic, fingerprint)
             && let Ok(p) = serde_json::to_vec(value)
         {
             self.publish(rel_topic, p);
@@ -153,14 +145,13 @@ fn evaluate(
     vmres: Option<&(engine::Samples, engine::Firing)>,
     now: u64,
 ) {
-    let refresh = cfg.refresh_intervals * cfg.interval_s;
     let tree_board = board.tree(link.tree);
     let mismatch = matches!(gen_state, Gen::Mismatch);
     let mut statuses = Vec::new();
     for screen in &tree_board.screens {
         let lay = engine::layout(&board.generation, screen, tree_board);
         if let Ok(fp) = serde_json::to_string(&lay) {
-            link.put(&topic::layout(&screen.name), &lay, &fp, now, refresh);
+            link.put(&topic::layout(&screen.name), &lay, &fp);
         }
         let mut msgs = Vec::new();
         for tile in &screen.tiles {
@@ -174,7 +165,7 @@ fn evaluate(
             );
             if !mismatch {
                 let fp = engine::tile_fingerprint(&m);
-                link.put(&topic::tile(&screen.name, &tile.id), &m, &fp, now, refresh);
+                link.put(&topic::tile(&screen.name, &tile.id), &m, &fp);
             }
             msgs.push(m);
         }
@@ -182,7 +173,7 @@ fn evaluate(
             for (device, m) in engine::topology_tiles(topo, vmres.map(|r| &r.1), now) {
                 if !mismatch {
                     let fp = engine::tile_fingerprint(&m);
-                    link.put(&topic::tile(&screen.name, &device), &m, &fp, now, refresh);
+                    link.put(&topic::tile(&screen.name, &device), &m, &fp);
                 }
                 msgs.push(m);
             }
@@ -191,7 +182,7 @@ fn evaluate(
     }
     let pl = engine::playlist(cfg.interval_s, &statuses);
     if let Ok(fp) = serde_json::to_string(&pl) {
-        link.put(topic::PLAYLIST, &pl, &fp, now, refresh);
+        link.put(topic::PLAYLIST, &pl, &fp);
     }
     let online = Online {
         state: if mismatch {

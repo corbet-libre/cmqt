@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
 
 #[cfg(feature = "client")]
 pub mod client;
@@ -17,7 +18,7 @@ pub mod client;
 /// Schema string carried by every `_layout` message.
 pub const LAYOUT_SCHEMA: &str = "corbet.obs.layout/1";
 
-/// A stale tile is one older than this many intervals.
+/// `_online` older than this many intervals means unreachable.
 pub const STALE_INTERVALS: u64 = 3;
 
 /// The two topic trees the server writes (D26).
@@ -178,7 +179,7 @@ impl Online {
     }
 }
 
-/// What a client should show for a tile (contract §5, B4).
+/// What a client should show for the whole board (contract §5, B4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Freshness {
     Fresh,
@@ -188,16 +189,13 @@ pub enum Freshness {
     Updating,
 }
 
-/// A tile is stale when `now - t > 3 * interval_s`.
-pub fn is_tile_stale(now: u64, t: u64, interval_s: u64) -> bool {
-    now.saturating_sub(t) > STALE_INTERVALS * interval_s
-}
-
-/// The staleness rule: stale when `_online` is not `online` or the tile's `t`
-/// is older than three intervals. A missing `_online` counts as unreachable.
-/// The interval comes from `_online` itself.
-pub fn freshness(now: u64, tile_t: u64, online: Option<&Online>) -> Freshness {
-    let Some(o) = online else {
+/// The staleness rule (contract §5): liveness comes from `_online` alone.
+/// `since_online` is the time since the client last RECEIVED `_online`,
+/// measured on its own monotonic clock (`Instant`); the server's clock is never
+/// compared. Unreachable when `_online` is missing, not `online`, or older than
+/// three intervals. The interval comes from `_online` itself.
+pub fn freshness(since_online: Option<Duration>, online: Option<&Online>) -> Freshness {
+    let (Some(since), Some(o)) = (since_online, online) else {
         return Freshness::Unreachable;
     };
     match o.state {
@@ -205,7 +203,7 @@ pub fn freshness(now: u64, tile_t: u64, online: Option<&Online>) -> Freshness {
         OnlineState::GenerationMismatch => Freshness::Updating,
         OnlineState::Online => {
             let interval = o.interval_s.unwrap_or(0);
-            if interval == 0 || is_tile_stale(now, tile_t, interval) {
+            if interval == 0 || since > Duration::from_secs(STALE_INTERVALS * interval) {
                 Freshness::Unreachable
             } else {
                 Freshness::Fresh
@@ -228,24 +226,20 @@ mod tests {
     }
 
     #[test]
-    fn staleness_boundary_is_three_intervals() {
-        assert!(!is_tile_stale(1090, 1000, 30));
-        assert!(is_tile_stale(1091, 1000, 30));
-        assert!(!is_tile_stale(900, 1000, 30), "future t is not stale");
-    }
-
-    #[test]
-    fn freshness_follows_online_and_age() {
+    fn freshness_follows_online_and_receipt_age() {
         let on = online(OnlineState::Online, 30);
-        assert_eq!(freshness(1010, 1000, Some(&on)), Freshness::Fresh);
-        assert_eq!(freshness(1100, 1000, Some(&on)), Freshness::Unreachable);
-        assert_eq!(freshness(1010, 1000, None), Freshness::Unreachable);
+        let secs = |n| Some(Duration::from_secs(n));
+        assert_eq!(freshness(secs(10), Some(&on)), Freshness::Fresh);
+        assert_eq!(freshness(secs(90), Some(&on)), Freshness::Fresh);
+        assert_eq!(freshness(secs(91), Some(&on)), Freshness::Unreachable);
+        assert_eq!(freshness(None, Some(&on)), Freshness::Unreachable);
+        assert_eq!(freshness(secs(1), None), Freshness::Unreachable);
         assert_eq!(
-            freshness(1010, 1000, Some(&Online::offline())),
+            freshness(secs(1), Some(&Online::offline())),
             Freshness::Unreachable
         );
         let mm = online(OnlineState::GenerationMismatch, 30);
-        assert_eq!(freshness(1010, 1000, Some(&mm)), Freshness::Updating);
+        assert_eq!(freshness(secs(1), Some(&mm)), Freshness::Updating);
     }
 
     #[test]
