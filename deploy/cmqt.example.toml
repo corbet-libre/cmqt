@@ -1,0 +1,16 @@
+# cmqt-server configuration (example).
+
+# cgrf output: manifest.json, internal/<screen>.json, public/<screen>.json
+dashboards_dir = "/var/lib/obs/dashboards"
+# VictoriaMetrics on the observability box; local only.
+victoria_url = "http://127.0.0.1:8428"
+# Mosquitto's loopback listener (section 1 of mosquitto.conf).
+broker_host = "127.0.0.1"
+broker_port = 1883
+# Equals vmalert's evaluation interval.
+interval_s = 30
+# cprm output. When set, its generation must equal the dashboards' generation,
+# otherwise _online says "generation-mismatch" and no tile values go out.
+prometheus_manifest = "/var/lib/obs/prometheus/manifest.json"
+# Unchanged tiles are re-sent every N intervals (1 or 2), see README Q1.
+refresh_intervals = 2

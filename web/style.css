@@ -1,0 +1,96 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #14171c;
+  --tile: #ffffff;
+  --edge: #c9ced6;
+  --green: #1f8f4d;
+  --yellow: #b08800;
+  --orange: #c4620a;
+  --red: #c62828;
+  --blue: #1f5fbf;
+  --purple: #7b3fb0;
+  --grey: #6b7280;
+  --row: 1.75rem;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101216;
+    --fg: #e8eaee;
+    --tile: #1a1d23;
+    --edge: #343944;
+    --green: #4cc27e;
+    --yellow: #e0b93a;
+    --orange: #f08a3c;
+    --red: #ff6b6b;
+    --blue: #6ea2ff;
+    --purple: #c08cf0;
+    --grey: #9aa1ad;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.3 system-ui, sans-serif; }
+#app { padding: 12px 16px; }
+h1 { font-size: 1.1rem; margin: 0 0 12px; font-weight: 600; }
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  grid-auto-rows: var(--row);
+  gap: 8px;
+}
+.tile {
+  grid-column: calc(var(--x) + 1) / span var(--w);
+  grid-row: calc(var(--y) + 1) / span var(--h);
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--tile);
+  border: 2px solid var(--edge);
+  border-left-width: 8px;
+  border-radius: 8px;
+  color: inherit; text-decoration: none; position: relative;
+  min-width: 0;
+}
+a.tile:hover, a.tile:focus-visible { border-color: var(--fg); outline: none; }
+.tile-title { font-size: .8rem; color: var(--grey); }
+.tile-value { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.c-green { border-left-color: var(--green); }
+.c-yellow { border-left-color: var(--yellow); }
+.c-orange { border-left-color: var(--orange); }
+.c-red { border-left-color: var(--red); }
+.c-blue { border-left-color: var(--blue); }
+.c-purple { border-left-color: var(--purple); }
+.c-grey, .c-none { border-left-color: var(--grey); }
+.c-green .tile-value { color: var(--green); }
+.c-yellow .tile-value { color: var(--yellow); }
+.c-orange .tile-value { color: var(--orange); }
+.c-red .tile-value { color: var(--red); }
+/* An issue is never colour alone: thick outline plus a text badge. */
+.s-issue { border-color: var(--red); }
+.tile-mark { position: absolute; top: 6px; right: 8px; font-size: .7rem; font-weight: 700; text-transform: uppercase; color: #fff; background: var(--red); padding: 1px 6px; border-radius: 4px; }
+.s-unknown .tile-value, .s-greyed .tile-value { color: var(--grey); }
+.board.greyed { opacity: .6; }
+
+/* Stale, offline or updating: cover the board, never show old green. */
+#overlay {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--bg); color: var(--fg); font-size: 1.6rem; font-weight: 600; text-align: center; padding: 16px;
+}
+#overlay[hidden] { display: none; }
+.blanked { visibility: hidden; }
+
+.topology { width: 100%; max-width: 900px; height: auto; margin-bottom: 16px; }
+.topology .node { fill: var(--tile); stroke: var(--fg); stroke-width: 1.5; }
+.topology .node.planned { stroke-dasharray: 5 4; }
+.topology .node.greyed { opacity: .55; }
+.topology .node-label { fill: var(--fg); font-size: 13px; }
+.topology .node-link:hover .node, .topology .node-link:focus .node { stroke-width: 3; }
+.topology .edge { stroke: var(--edge); stroke-width: 2; }
+.topology .bracket { fill: none; stroke: var(--grey); stroke-width: 1; stroke-dasharray: 2 3; }
+.topology .bracket-label, .topology .group-label { fill: var(--grey); font-size: 11px; }
+
+/* Phones in portrait: one column, in reading order. */
+@media (max-width: 600px) {
+  .board { grid-template-columns: 1fr; grid-auto-rows: auto; }
+  .tile { grid-column: 1; grid-row: auto; min-height: calc(var(--h) * var(--row)); }
+}

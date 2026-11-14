@@ -63,12 +63,15 @@ impl Broker {
         // local listener for the server; a second one mounts public/ and is
         // what a browser would reach. No persistence, like production.
         let conf = dir.join("mosquitto.conf");
+        // The real ACL of the public listener (deploy/public.acl).
+        let acl = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../deploy/public.acl");
+        let acl = acl.display();
         std::fs::write(
             &conf,
             format!(
                 "per_listener_settings true\npersistence false\n\
                  listener {port} 127.0.0.1\nallow_anonymous true\n\
-                 listener {mounted_port} 127.0.0.1\nallow_anonymous true\nmount_point public/\n"
+                 listener {mounted_port} 127.0.0.1\nallow_anonymous true\nmount_point public/\nacl_file {acl}\n"
             ),
         )
         .unwrap();
@@ -634,4 +637,40 @@ async fn republishes_everything_after_broker_restart() {
             && w.last("internal/_playlist").is_some()
     })
     .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn public_listener_is_read_only() {
+    let dir = scratch("acl");
+    let (p, mp) = (free_port(), free_port());
+    let broker = Broker::start(&dir, p, mp);
+    let vm = Vm::start();
+    let _server = Server::start(&dir, broker.port, &vm, 1, "");
+    let local = Watcher::new(broker.port, "#").await;
+    let web = Watcher::new(broker.mounted_port, "#").await;
+    web.wait_for("public board", |w| w.last("srv/ram").is_some())
+        .await;
+    // an anonymous visitor tries to write: to a tile, and to a new topic
+    let mut o = MqttOptions::new("intruder", "127.0.0.1", broker.mounted_port);
+    o.set_keep_alive(Duration::from_secs(5));
+    let (c, mut ev) = AsyncClient::new(o, 10);
+    tokio::spawn(async move { while ev.poll().await.is_ok() {} });
+    c.publish(
+        "srv/ram",
+        QoS::AtLeastOnce,
+        true,
+        r#"{"v":1,"d":"HACKED","c":"green","s":"ok","t":1}"#,
+    )
+    .await
+    .unwrap();
+    c.publish("evil", QoS::AtLeastOnce, true, "x")
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        local
+            .all()
+            .iter()
+            .all(|m| m.topic != "public/evil" && !m.payload.to_string().contains("HACKED"))
+    );
 }

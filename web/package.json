@@ -1,0 +1,21 @@
+{
+  "name": "cmqt-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static browser client for the Corbet status board (MQTT over WebSocket)",
+  "license": "LGPL-3.0-only WITH LGPL-3.0-linking-exception",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "mqtt": "^5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.25",
+    "typescript": "^5"
+  }
+}

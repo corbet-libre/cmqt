@@ -1,0 +1,4 @@
+# ACL of the public listener. Anonymous clients may read, nobody may write.
+# The mount point is applied before the ACL check, so the topic is written
+# with the tree prefix. Only cmqt-server (on the loopback listener) publishes.
+topic read public/#

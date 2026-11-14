@@ -1,0 +1,3 @@
+# ACL of the internal listeners. Any client with a valid certificate may read
+# the internal tree; nobody may write through these listeners.
+pattern read internal/#
