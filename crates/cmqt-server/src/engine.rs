@@ -196,7 +196,12 @@ pub fn compute_tile(
         Some(v) => TileMsg {
             v: Some(v),
             d: format_value(v, tile.unit.as_deref(), tile.decimals),
-            c: threshold_colour(v, &tile.steps),
+            // an unknown tile never shows a state colour from a threshold (never green without data)
+            c: if state == TileState::Unknown {
+                state_colour(state).into()
+            } else {
+                threshold_colour(v, &tile.steps)
+            },
             s: state,
             t: now,
         },
@@ -712,6 +717,19 @@ mod tests {
         let topo = json!({"nodes":[{"device":"srv"},{"device":"fra-0"}]});
         let t = topology_tiles(&topo, Some(&f), &|d| node_lacks_data(&tb, d, Some(&sm)), 5);
         let get = |d: &str| t.iter().find(|(n, _)| n == d).map(|(_, m)| m.s);
+        // an unknown aggregate tile with a recorded value is grey, not threshold green
+        let mut with_value = samples("overview", "x", 0.0);
+        with_value.insert("srv", "alive", 1.0);
+        let m = compute_tile(
+            Tree::Internal,
+            &tb.screens[2],
+            &tb.screens[2].tiles[0],
+            Some(&with_value),
+            Some(&f),
+            true,
+            1,
+        );
+        assert_eq!((m.s, m.c.as_str()), (TileState::Unknown, "grey"));
         assert_eq!(get("srv"), Some(TileState::Ok));
         assert_eq!(get("fra-0"), Some(TileState::Unknown));
         // no samples at all: every device lacks data
