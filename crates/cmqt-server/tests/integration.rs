@@ -366,6 +366,14 @@ async fn topics_retention_and_public_isolation() {
     assert_eq!(ram.payload["v"], 63.0);
     assert_eq!(ram.payload["d"], "63.0 %");
     assert_eq!(ram.payload["s"], "ok");
+    // only _online expires (3 x interval); tiles live until they change
+    assert_eq!(ram.expiry, None);
+    let on = all.on("internal/_online").remove(0); // the retained delivery
+    assert!(
+        on.expiry.is_some_and(|e| (1..=6).contains(&e)),
+        "expiry {:?}",
+        on.expiry
+    );
     assert!(ram.payload["t"].as_u64().unwrap() > 1_700_000_000);
     // aggregate state comes from the alert match, scoped by site and host
     assert_eq!(
