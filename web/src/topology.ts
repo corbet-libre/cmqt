@@ -116,11 +116,24 @@ export function drawTopology(t: Topology, tld: Tld): SVGSVGElement {
     const href = screenUrl(b.device, tld);
     const g = href ? el("a", { href, class: "node-link" }) : el("g", {});
     const cls = ["node", b.planned ? "planned" : "", b.greyed ? "greyed" : ""].join(" ").trim();
-    g.append(el("rect", { x: b.x, y: b.y, width: BOX_W, height: BOX_H, rx: 6, class: cls }));
+    g.append(el("rect", { x: b.x, y: b.y, width: BOX_W, height: BOX_H, rx: 6, class: cls, "data-device": b.device }));
     const text = el("text", { x: b.x + BOX_W / 2, y: b.y + BOX_H / 2 + 5, "text-anchor": "middle", class: "node-label" });
     text.textContent = b.device;
     g.append(text);
     svg.append(g);
   }
   return svg;
+}
+
+/** Colour a node by its `topology/<device>` tile: ok, issue (with a text badge), unknown or greyed. */
+export function paintNode(svg: SVGSVGElement, device: string, state: string, word: string): void {
+  for (const r of Array.from(svg.querySelectorAll("rect.node"))) {
+    if (r.getAttribute("data-device") !== device) continue;
+    r.classList.remove("s-ok", "s-issue", "s-unknown", "s-greyed");
+    r.classList.add(`s-${state}`);
+    const title = r.parentElement?.querySelector("title") ?? r.parentElement?.appendChild(document.createElementNS(NS, "title"));
+    if (title) title.textContent = `${device}: ${word}`;
+    const label = r.parentElement?.querySelector(".node-label");
+    if (label) label.textContent = state === "issue" ? `${device} !` : device;
+  }
 }

@@ -1,0 +1,83 @@
+{
+  "corbet": {
+    "door": "public",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": true,
+    "kind": "site",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "site.chs.gcp"
+  },
+  "links": [
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [],
+        "link": "e2-micro",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.chs.gcp",
+            "tile": "e2_micro"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "e2-micro"
+        },
+        "tile": "e2_micro"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "links": [
+        {
+          "title": "e2-micro",
+          "url": "/d/e2-micro"
+        }
+      ],
+      "title": "e2-micro",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "site"
+  ],
+  "title": "Charleston (Google Cloud)",
+  "uid": "site.chs.gcp"
+}

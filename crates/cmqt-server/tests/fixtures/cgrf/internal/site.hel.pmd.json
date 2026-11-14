@@ -1,0 +1,500 @@
+{
+  "corbet": {
+    "door": "internal",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "site",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "site.hel.pmd"
+  },
+  "links": [
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "cld-0",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.hel.pmd",
+            "tile": "cld_0"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "cld-0"
+        },
+        "tile": "cld_0"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "links": [
+        {
+          "title": "cld-0",
+          "url": "/d/cld-0"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-0\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "cld-0",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "cld-1",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.hel.pmd",
+            "tile": "cld_1"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "cld-1"
+        },
+        "tile": "cld_1"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "links": [
+        {
+          "title": "cld-1",
+          "url": "/d/cld-1"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-1\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "cld-1",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "cld-2",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.hel.pmd",
+            "tile": "cld_2"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "cld-2"
+        },
+        "tile": "cld_2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "links": [
+        {
+          "title": "cld-2",
+          "url": "/d/cld-2"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-2\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "cld-2",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "cld-3",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.hel.pmd",
+            "tile": "cld_3"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "cld-3"
+        },
+        "tile": "cld_3"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "links": [
+        {
+          "title": "cld-3",
+          "url": "/d/cld-3"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-3\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "cld-3",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "cld-4",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.hel.pmd",
+            "tile": "cld_4"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "cld-4"
+        },
+        "tile": "cld_4"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "id": 5,
+      "links": [
+        {
+          "title": "cld-4",
+          "url": "/d/cld-4"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-4\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "cld-4",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "cld-5",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.hel.pmd",
+            "tile": "cld_5"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "cld-5"
+        },
+        "tile": "cld_5"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 4
+      },
+      "id": 6,
+      "links": [
+        {
+          "title": "cld-5",
+          "url": "/d/cld-5"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-5\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "cld-5",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "cld-6",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.hel.pmd",
+            "tile": "cld_6"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "cld-6"
+        },
+        "tile": "cld_6"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 4
+      },
+      "id": 7,
+      "links": [
+        {
+          "title": "cld-6",
+          "url": "/d/cld-6"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-6\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "cld-6",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "site"
+  ],
+  "title": "Helsinki (Pulsed Media)",
+  "uid": "site.hel.pmd"
+}

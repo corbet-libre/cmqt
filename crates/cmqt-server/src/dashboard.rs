@@ -106,6 +106,16 @@ struct RawPanelCorbet {
     topology: Option<Value>,
     #[serde(default)]
     record: Option<RawRecord>,
+    #[serde(default)]
+    scope: BTreeMap<String, OneOrMany>,
+}
+
+/// A scope label value: one string, or a list meaning "any of".
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany {
+    One(String),
+    Many(Vec<String>),
 }
 
 #[derive(Deserialize)]
@@ -125,8 +135,12 @@ pub struct TileDef {
     pub steps: Vec<Step>,
     pub alerts: Vec<String>,
     pub link: Option<String>,
-    /// Value of the recording rule's `door` label, when cprm sets one.
-    pub record_door: Option<String>,
+    /// Labels the firing alert must carry (every key; a value matches if it is
+    /// any of the listed ones).
+    pub scope: BTreeMap<String, Vec<String>>,
+    /// The `corbet:tile:value` series this tile reads: `(screen, tile)`.
+    /// Public panels carry the labels of the internal panel they mirror.
+    pub record: (String, String),
 }
 
 #[derive(Clone, Debug)]
@@ -228,6 +242,7 @@ pub fn load(dir: &Path) -> Result<Board, String> {
 fn convert(raw: RawDashboard) -> Screen {
     let mut topology = raw.corbet.topology;
     let mut tiles = Vec::new();
+    let screen_name = raw.corbet.screen.clone();
     for p in raw.panels {
         let Some(c) = p.corbet else { continue };
         if topology.is_none() {
@@ -241,6 +256,29 @@ fn convert(raw: RawDashboard) -> Screen {
             h: 4,
         });
         let d = p.field_config.map(|f| f.defaults).unwrap_or_default();
+        let label = |k: &str, dflt: &str| {
+            c.record
+                .as_ref()
+                .and_then(|r| r.labels.get(k).cloned())
+                .unwrap_or_else(|| dflt.to_string())
+        };
+        let record = (label("screen", &screen_name), label("tile", &id));
+        let mut scope: BTreeMap<String, Vec<String>> = c
+            .scope
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    match v {
+                        OneOrMany::One(x) => vec![x],
+                        OneOrMany::Many(x) => x,
+                    },
+                )
+            })
+            .collect();
+        if scope.is_empty() && raw.corbet.kind == "device" {
+            scope.insert("host_name".into(), vec![screen_name.clone()]);
+        }
         tiles.push(TileDef {
             id,
             title: p.title,
@@ -255,7 +293,8 @@ fn convert(raw: RawDashboard) -> Screen {
             steps: d.thresholds.map(|t| t.steps).unwrap_or_default(),
             alerts: c.alerts,
             link: c.link,
-            record_door: c.record.and_then(|r| r.labels.get("door").cloned()),
+            scope,
+            record,
         });
     }
     Screen {
@@ -273,29 +312,38 @@ mod tests {
     use super::*;
 
     fn fixtures() -> std::path::PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cgrf")
     }
 
     #[test]
-    fn loads_fixture_board() {
+    fn loads_real_cgrf_board() {
         let b = load(&fixtures()).unwrap();
-        assert_eq!(b.public.screens.len(), 3);
-        assert_eq!(b.internal.screens.len(), 5);
+        assert_eq!(b.public.screens.len(), 23);
+        assert_eq!(b.internal.screens.len(), 26);
         let srv = b.internal.screens.iter().find(|s| s.name == "srv").unwrap();
-        assert_eq!(srv.tiles.len(), 3);
-        assert_eq!(srv.tiles[1].grid.x, 8);
+        assert_eq!(srv.tiles.len(), 6);
+        assert_eq!(srv.tiles[0].scope["host_name"], ["srv"]);
+        let ov = b
+            .public
+            .screens
+            .iter()
+            .find(|s| s.name == "overview")
+            .unwrap();
+        let fra = ov.tiles.iter().find(|t| t.id == "fra_brh").unwrap();
+        assert_eq!(fra.scope["site"], ["0x20"]);
+        assert_eq!(fra.scope["host_name"].len(), 5, "list scope");
         let topo = b
             .internal
             .screens
             .iter()
             .find(|s| s.name == "topology")
             .unwrap();
-        assert!(topo.topology.is_some() && topo.tiles.is_empty());
+        assert!(topo.topology.is_some());
         assert!(
             b.internal
                 .screens
                 .iter()
-                .any(|s| s.name == "laptop" && s.greyed)
+                .any(|s| s.name == "elitebook" && s.greyed)
         );
     }
 

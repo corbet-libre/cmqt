@@ -11,7 +11,7 @@ import {
   type Online,
   type TileMsg,
 } from "./logic.ts";
-import { drawTopology } from "./topology.ts";
+import { drawTopology, paintNode } from "./topology.ts";
 
 const app = document.getElementById("app") as HTMLElement;
 const overlay = document.getElementById("overlay") as HTMLElement;
@@ -29,6 +29,7 @@ let layout: Layout | null = null;
 const tiles = new Map<string, TileMsg>();
 const nodes = new Map<string, HTMLElement>();
 let connected = false;
+let topologySvg: SVGSVGElement | null = null;
 
 function now(): number {
   return Math.floor(Date.now() / 1000);
@@ -72,7 +73,11 @@ function renderLayout(l: Layout, h: HostInfo): void {
   const h1 = document.createElement("h1");
   h1.textContent = l.title;
   app.append(h1);
-  if (l.topology) app.append(drawTopology(l.topology, h.tld));
+  topologySvg = null;
+  if (l.topology) {
+    topologySvg = drawTopology(l.topology, h.tld);
+    app.append(topologySvg);
+  }
   for (const t of stackOrder(l.tiles)) {
     const n = buildTile(t, h.tld);
     nodes.set(t.id, n);
@@ -80,6 +85,11 @@ function renderLayout(l: Layout, h: HostInfo): void {
   }
   app.append(board);
   for (const id of nodes.keys()) paintTile(id);
+  for (const [id, m] of tiles) paintNodeTile(id, m);
+}
+
+function paintNodeTile(id: string, m: TileMsg): void {
+  if (topologySvg && !nodes.has(id)) paintNode(topologySvg, id, m.s, m.d);
 }
 
 function paintTile(id: string): void {
@@ -145,6 +155,7 @@ function main(): void {
       const id = topic.slice(host.screen.length + 1);
       tiles.set(id, data as TileMsg);
       paintTile(id);
+      paintNodeTile(id, data as TileMsg);
     }
     evaluate();
   });

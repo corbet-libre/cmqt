@@ -1,0 +1,91 @@
+{
+  "corbet": {
+    "door": "internal",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "device",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "archlxc"
+  },
+  "links": [
+    {
+      "title": "site.home",
+      "type": "link",
+      "url": "/d/site.home"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    },
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceDown",
+          "DeviceHeartbeatLate"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "archlxc",
+            "tile": "alive"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "archlxc"
+        },
+        "tile": "alive"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "(time() - max(timestamp({__name__=\"nixdeploy_receiver_recorded_timestamp_seconds\",host=\"archlxc\"})) < bool 900)",
+          "refId": "A"
+        }
+      ],
+      "title": "Heartbeat",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "device",
+    "lxc"
+  ],
+  "title": "archlxc",
+  "uid": "archlxc"
+}

@@ -1,0 +1,300 @@
+{
+  "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+  "schema": "corbet.obs.manifest/1",
+  "screens": [
+    {
+      "door": "internal",
+      "file": "internal/archlxc.json",
+      "kind": "device",
+      "name": "archlxc"
+    },
+    {
+      "door": "internal",
+      "file": "internal/cld-0.json",
+      "kind": "device",
+      "name": "cld-0"
+    },
+    {
+      "door": "public",
+      "file": "public/cld-0.json",
+      "kind": "device",
+      "name": "cld-0"
+    },
+    {
+      "door": "internal",
+      "file": "internal/cld-1.json",
+      "kind": "device",
+      "name": "cld-1"
+    },
+    {
+      "door": "public",
+      "file": "public/cld-1.json",
+      "kind": "device",
+      "name": "cld-1"
+    },
+    {
+      "door": "internal",
+      "file": "internal/cld-2.json",
+      "kind": "device",
+      "name": "cld-2"
+    },
+    {
+      "door": "public",
+      "file": "public/cld-2.json",
+      "kind": "device",
+      "name": "cld-2"
+    },
+    {
+      "door": "internal",
+      "file": "internal/cld-3.json",
+      "kind": "device",
+      "name": "cld-3"
+    },
+    {
+      "door": "public",
+      "file": "public/cld-3.json",
+      "kind": "device",
+      "name": "cld-3"
+    },
+    {
+      "door": "internal",
+      "file": "internal/cld-4.json",
+      "kind": "device",
+      "name": "cld-4"
+    },
+    {
+      "door": "public",
+      "file": "public/cld-4.json",
+      "kind": "device",
+      "name": "cld-4"
+    },
+    {
+      "door": "internal",
+      "file": "internal/cld-5.json",
+      "kind": "device",
+      "name": "cld-5"
+    },
+    {
+      "door": "public",
+      "file": "public/cld-5.json",
+      "kind": "device",
+      "name": "cld-5"
+    },
+    {
+      "door": "internal",
+      "file": "internal/cld-6.json",
+      "kind": "device",
+      "name": "cld-6"
+    },
+    {
+      "door": "public",
+      "file": "public/cld-6.json",
+      "kind": "device",
+      "name": "cld-6"
+    },
+    {
+      "door": "internal",
+      "file": "internal/e2-micro.json",
+      "kind": "device",
+      "name": "e2-micro"
+    },
+    {
+      "door": "public",
+      "file": "public/e2-micro.json",
+      "kind": "device",
+      "name": "e2-micro"
+    },
+    {
+      "door": "internal",
+      "file": "internal/elitebook.json",
+      "kind": "device",
+      "name": "elitebook"
+    },
+    {
+      "door": "public",
+      "file": "public/elitebook.json",
+      "kind": "device",
+      "name": "elitebook"
+    },
+    {
+      "door": "internal",
+      "file": "internal/fra-0.json",
+      "kind": "device",
+      "name": "fra-0"
+    },
+    {
+      "door": "public",
+      "file": "public/fra-0.json",
+      "kind": "device",
+      "name": "fra-0"
+    },
+    {
+      "door": "internal",
+      "file": "internal/fra-1.json",
+      "kind": "device",
+      "name": "fra-1"
+    },
+    {
+      "door": "public",
+      "file": "public/fra-1.json",
+      "kind": "device",
+      "name": "fra-1"
+    },
+    {
+      "door": "internal",
+      "file": "internal/fra-2.json",
+      "kind": "device",
+      "name": "fra-2"
+    },
+    {
+      "door": "public",
+      "file": "public/fra-2.json",
+      "kind": "device",
+      "name": "fra-2"
+    },
+    {
+      "door": "internal",
+      "file": "internal/fra-3.json",
+      "kind": "device",
+      "name": "fra-3"
+    },
+    {
+      "door": "public",
+      "file": "public/fra-3.json",
+      "kind": "device",
+      "name": "fra-3"
+    },
+    {
+      "door": "internal",
+      "file": "internal/fra-4.json",
+      "kind": "device",
+      "name": "fra-4"
+    },
+    {
+      "door": "public",
+      "file": "public/fra-4.json",
+      "kind": "device",
+      "name": "fra-4"
+    },
+    {
+      "door": "internal",
+      "file": "internal/office.mac.vm.srv.json",
+      "kind": "device",
+      "name": "office.mac.vm.srv"
+    },
+    {
+      "door": "internal",
+      "file": "internal/office.win.vm.srv.json",
+      "kind": "device",
+      "name": "office.win.vm.srv"
+    },
+    {
+      "door": "internal",
+      "file": "internal/overview.json",
+      "kind": "overview",
+      "name": "overview"
+    },
+    {
+      "door": "public",
+      "file": "public/overview.json",
+      "kind": "overview",
+      "name": "overview"
+    },
+    {
+      "door": "internal",
+      "file": "internal/site.chs.gcp.json",
+      "kind": "site",
+      "name": "site.chs.gcp"
+    },
+    {
+      "door": "public",
+      "file": "public/site.chs.gcp.json",
+      "kind": "site",
+      "name": "site.chs.gcp"
+    },
+    {
+      "door": "internal",
+      "file": "internal/site.fra.brh.json",
+      "kind": "site",
+      "name": "site.fra.brh"
+    },
+    {
+      "door": "public",
+      "file": "public/site.fra.brh.json",
+      "kind": "site",
+      "name": "site.fra.brh"
+    },
+    {
+      "door": "internal",
+      "file": "internal/site.fra.vtr.json",
+      "kind": "site",
+      "name": "site.fra.vtr"
+    },
+    {
+      "door": "public",
+      "file": "public/site.fra.vtr.json",
+      "kind": "site",
+      "name": "site.fra.vtr"
+    },
+    {
+      "door": "internal",
+      "file": "internal/site.hel.pmd.json",
+      "kind": "site",
+      "name": "site.hel.pmd"
+    },
+    {
+      "door": "public",
+      "file": "public/site.hel.pmd.json",
+      "kind": "site",
+      "name": "site.hel.pmd"
+    },
+    {
+      "door": "internal",
+      "file": "internal/site.home.json",
+      "kind": "site",
+      "name": "site.home"
+    },
+    {
+      "door": "public",
+      "file": "public/site.home.json",
+      "kind": "site",
+      "name": "site.home"
+    },
+    {
+      "door": "internal",
+      "file": "internal/srv.json",
+      "kind": "device",
+      "name": "srv"
+    },
+    {
+      "door": "public",
+      "file": "public/srv.json",
+      "kind": "device",
+      "name": "srv"
+    },
+    {
+      "door": "internal",
+      "file": "internal/topology.json",
+      "kind": "topology",
+      "name": "topology"
+    },
+    {
+      "door": "public",
+      "file": "public/topology.json",
+      "kind": "topology",
+      "name": "topology"
+    },
+    {
+      "door": "internal",
+      "file": "internal/vultr.json",
+      "kind": "device",
+      "name": "vultr"
+    },
+    {
+      "door": "public",
+      "file": "public/vultr.json",
+      "kind": "device",
+      "name": "vultr"
+    }
+  ]
+}

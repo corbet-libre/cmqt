@@ -1,0 +1,98 @@
+{
+  "corbet": {
+    "door": "internal",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "site",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "site.fra.vtr"
+  },
+  "links": [
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "vultr",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.fra.vtr",
+            "tile": "vultr"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "vultr"
+        },
+        "tile": "vultr"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "links": [
+        {
+          "title": "vultr",
+          "url": "/d/vultr"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"vultr\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "vultr",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "site"
+  ],
+  "title": "Frankfurt (Vultr)",
+  "uid": "site.fra.vtr"
+}

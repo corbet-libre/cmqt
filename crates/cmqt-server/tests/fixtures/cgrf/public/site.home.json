@@ -1,0 +1,150 @@
+{
+  "corbet": {
+    "door": "public",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "site",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "site.home"
+  },
+  "links": [
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "srv",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.home",
+            "tile": "srv"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "srv"
+        },
+        "tile": "srv"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "links": [
+        {
+          "title": "srv",
+          "url": "/d/srv"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "corbet:tile:value{screen=\"site.home\",tile=\"srv\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "srv",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "link": "elitebook",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.home",
+            "tile": "elitebook"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "elitebook"
+        },
+        "tile": "elitebook"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "links": [
+        {
+          "title": "elitebook",
+          "url": "/d/elitebook"
+        }
+      ],
+      "title": "elitebook",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "site"
+  ],
+  "title": "Home",
+  "uid": "site.home"
+}

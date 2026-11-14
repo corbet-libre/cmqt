@@ -1,0 +1,336 @@
+{
+  "corbet": {
+    "door": "public",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "site",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "site.fra.brh"
+  },
+  "links": [
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "fra-0",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.fra.brh",
+            "tile": "fra_0"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-0"
+        },
+        "tile": "fra_0"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "links": [
+        {
+          "title": "fra-0",
+          "url": "/d/fra-0"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "corbet:tile:value{screen=\"site.fra.brh\",tile=\"fra_0\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "fra-0",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "fra-1",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.fra.brh",
+            "tile": "fra_1"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-1"
+        },
+        "tile": "fra_1"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "links": [
+        {
+          "title": "fra-1",
+          "url": "/d/fra-1"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "corbet:tile:value{screen=\"site.fra.brh\",tile=\"fra_1\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "fra-1",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "fra-2",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.fra.brh",
+            "tile": "fra_2"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-2"
+        },
+        "tile": "fra_2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "links": [
+        {
+          "title": "fra-2",
+          "url": "/d/fra-2"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "corbet:tile:value{screen=\"site.fra.brh\",tile=\"fra_2\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "fra-2",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "link": "fra-3",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.fra.brh",
+            "tile": "fra_3"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-3"
+        },
+        "tile": "fra_3"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "links": [
+        {
+          "title": "fra-3",
+          "url": "/d/fra-3"
+        }
+      ],
+      "title": "fra-3",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "link": "fra-4",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "site.fra.brh",
+            "tile": "fra_4"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-4"
+        },
+        "tile": "fra_4"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "id": 5,
+      "links": [
+        {
+          "title": "fra-4",
+          "url": "/d/fra-4"
+        }
+      ],
+      "title": "fra-4",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "site"
+  ],
+  "title": "Frankfurt (BERO HOST)",
+  "uid": "site.fra.brh"
+}

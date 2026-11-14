@@ -1,0 +1,654 @@
+{
+  "corbet": {
+    "door": "public",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "topology",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "topology"
+  },
+  "links": [
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "overview",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "topology",
+            "tile": "topology"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {},
+        "tile": "topology",
+        "topology": {
+          "brackets": [
+            {
+              "members": [
+                "cld-0",
+                "cld-1",
+                "cld-2",
+                "cld-3",
+                "cld-4",
+                "cld-5",
+                "cld-6",
+                "fra-0",
+                "fra-1",
+                "fra-2",
+                "srv",
+                "vultr"
+              ],
+              "name": "vultr"
+            },
+            {
+              "members": [
+                "fra-0",
+                "fra-1",
+                "fra-2"
+              ],
+              "name": "k8s.fra.brh"
+            },
+            {
+              "members": [
+                "srv"
+              ],
+              "name": "k8s.nas"
+            }
+          ],
+          "edges": [
+            {
+              "from": "cld-0",
+              "kind": "pair",
+              "to": "fra-0"
+            },
+            {
+              "from": "cld-1",
+              "kind": "pair",
+              "to": "fra-1"
+            },
+            {
+              "from": "cld-2",
+              "kind": "pair",
+              "to": "fra-2"
+            },
+            {
+              "from": "cld-3",
+              "kind": "pair",
+              "to": "fra-3"
+            },
+            {
+              "from": "cld-4",
+              "kind": "pair",
+              "to": "fra-4"
+            },
+            {
+              "from": "cld-5",
+              "kind": "pair",
+              "to": "srv"
+            },
+            {
+              "from": "cld-6",
+              "kind": "pair",
+              "to": "elitebook"
+            }
+          ],
+          "nodes": [
+            {
+              "col": 0,
+              "device": "cld-0",
+              "greyed": false,
+              "group": "helsinki",
+              "planned": false,
+              "row": 0
+            },
+            {
+              "col": 1,
+              "device": "cld-1",
+              "greyed": false,
+              "group": "helsinki",
+              "planned": false,
+              "row": 0
+            },
+            {
+              "col": 2,
+              "device": "cld-2",
+              "greyed": false,
+              "group": "helsinki",
+              "planned": false,
+              "row": 0
+            },
+            {
+              "col": 3,
+              "device": "cld-3",
+              "greyed": false,
+              "group": "helsinki",
+              "planned": false,
+              "row": 0
+            },
+            {
+              "col": 4,
+              "device": "cld-4",
+              "greyed": false,
+              "group": "helsinki",
+              "planned": false,
+              "row": 0
+            },
+            {
+              "col": 5,
+              "device": "cld-5",
+              "greyed": false,
+              "group": "helsinki",
+              "planned": false,
+              "row": 0
+            },
+            {
+              "col": 6,
+              "device": "cld-6",
+              "greyed": false,
+              "group": "helsinki",
+              "planned": false,
+              "row": 0
+            },
+            {
+              "col": 0,
+              "device": "fra-0",
+              "greyed": false,
+              "group": "frankfurt",
+              "planned": false,
+              "row": 2
+            },
+            {
+              "col": 1,
+              "device": "fra-1",
+              "greyed": false,
+              "group": "frankfurt",
+              "planned": false,
+              "row": 2
+            },
+            {
+              "col": 2,
+              "device": "fra-2",
+              "greyed": false,
+              "group": "frankfurt",
+              "planned": false,
+              "row": 2
+            },
+            {
+              "col": 3,
+              "device": "fra-3",
+              "greyed": true,
+              "group": "frankfurt",
+              "planned": true,
+              "row": 2
+            },
+            {
+              "col": 4,
+              "device": "fra-4",
+              "greyed": true,
+              "group": "frankfurt",
+              "planned": true,
+              "row": 2
+            },
+            {
+              "col": 5,
+              "device": "srv",
+              "greyed": false,
+              "group": "home",
+              "planned": false,
+              "row": 2
+            },
+            {
+              "col": 6,
+              "device": "elitebook",
+              "greyed": true,
+              "group": "home",
+              "planned": false,
+              "row": 2
+            },
+            {
+              "col": 0,
+              "device": "e2-micro",
+              "greyed": true,
+              "group": "outposts",
+              "planned": false,
+              "row": 3
+            },
+            {
+              "col": 8,
+              "device": "vultr",
+              "greyed": false,
+              "group": "vultr",
+              "planned": false,
+              "row": 1
+            }
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "links": [
+        {
+          "title": "overview",
+          "url": "/d/overview"
+        }
+      ],
+      "options": {
+        "inlineEditing": false,
+        "root": {
+          "elements": [
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "cld-0"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "cld-0",
+              "placement": {
+                "height": 60,
+                "left": 0,
+                "top": 0,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "cld-1"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "cld-1",
+              "placement": {
+                "height": 60,
+                "left": 110,
+                "top": 0,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "cld-2"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "cld-2",
+              "placement": {
+                "height": 60,
+                "left": 220,
+                "top": 0,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "cld-3"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "cld-3",
+              "placement": {
+                "height": 60,
+                "left": 330,
+                "top": 0,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "cld-4"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "cld-4",
+              "placement": {
+                "height": 60,
+                "left": 440,
+                "top": 0,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "cld-5"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "cld-5",
+              "placement": {
+                "height": 60,
+                "left": 550,
+                "top": 0,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "cld-6"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "cld-6",
+              "placement": {
+                "height": 60,
+                "left": 660,
+                "top": 0,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "fra-0"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "fra-0",
+              "placement": {
+                "height": 60,
+                "left": 0,
+                "top": 180,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "fra-1"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "fra-1",
+              "placement": {
+                "height": 60,
+                "left": 110,
+                "top": 180,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "fra-2"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "fra-2",
+              "placement": {
+                "height": 60,
+                "left": 220,
+                "top": 180,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#8a8a8a"
+                },
+                "text": {
+                  "fixed": "fra-3"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "fra-3",
+              "placement": {
+                "height": 60,
+                "left": 330,
+                "top": 180,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#8a8a8a"
+                },
+                "text": {
+                  "fixed": "fra-4"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "fra-4",
+              "placement": {
+                "height": 60,
+                "left": 440,
+                "top": 180,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "srv"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "srv",
+              "placement": {
+                "height": 60,
+                "left": 550,
+                "top": 180,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#8a8a8a"
+                },
+                "text": {
+                  "fixed": "elitebook"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "elitebook",
+              "placement": {
+                "height": 60,
+                "left": 660,
+                "top": 180,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#8a8a8a"
+                },
+                "text": {
+                  "fixed": "e2-micro"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "e2-micro",
+              "placement": {
+                "height": 60,
+                "left": 0,
+                "top": 270,
+                "width": 100
+              },
+              "type": "rectangle"
+            },
+            {
+              "config": {
+                "backgroundColor": {
+                  "fixed": "#2e7d32"
+                },
+                "text": {
+                  "fixed": "vultr"
+                }
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "vultr",
+              "placement": {
+                "height": 60,
+                "left": 880,
+                "top": 90,
+                "width": 100
+              },
+              "type": "rectangle"
+            }
+          ],
+          "name": "root",
+          "type": "frame"
+        }
+      },
+      "targets": [
+        {
+          "expr": "corbet:tile:value{screen=\"topology\",tile=\"topology\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Devices",
+      "type": "canvas"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "topology"
+  ],
+  "title": "Topology",
+  "uid": "topology"
+}

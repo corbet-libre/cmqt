@@ -1,0 +1,346 @@
+{
+  "corbet": {
+    "door": "internal",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "overview",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "overview"
+  },
+  "links": [
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [],
+        "link": "site.chs.gcp",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "overview",
+            "tile": "chs_gcp"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "site": "0x3D"
+        },
+        "tile": "chs_gcp"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "links": [
+        {
+          "title": "site.chs.gcp",
+          "url": "/d/site.chs.gcp"
+        }
+      ],
+      "title": "Charleston (Google Cloud)",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "site.fra.brh",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "overview",
+            "tile": "fra_brh"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "site": "0x20"
+        },
+        "tile": "fra_brh"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "links": [
+        {
+          "title": "site.fra.brh",
+          "url": "/d/site.fra.brh"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"fra-0|fra-1|fra-2\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "Frankfurt (BERO HOST)",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "site.fra.vtr",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "overview",
+            "tile": "fra_vtr"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "site": "0x21"
+        },
+        "tile": "fra_vtr"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "links": [
+        {
+          "title": "site.fra.vtr",
+          "url": "/d/site.fra.vtr"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"vultr\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "Frankfurt (Vultr)",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "site.hel.pmd",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "overview",
+            "tile": "hel_pmd"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "site": "0x22"
+        },
+        "tile": "hel_pmd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "links": [
+        {
+          "title": "site.hel.pmd",
+          "url": "/d/site.hel.pmd"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-0|cld-1|cld-2|cld-3|cld-4|cld-5|cld-6\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "Helsinki (Pulsed Media)",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated",
+          "DeviceDiskFull",
+          "DeviceDown",
+          "DeviceHeartbeatLate",
+          "DeviceIoSaturated",
+          "DeviceKernelErrors",
+          "DeviceMemoryLow",
+          "DeviceNetErrors"
+        ],
+        "link": "site.home",
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "overview",
+            "tile": "home"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "site": "0x2A"
+        },
+        "tile": "home"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "id": 5,
+      "links": [
+        {
+          "title": "site.home",
+          "url": "/d/site.home"
+        }
+      ],
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"srv|archlxc\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "title": "Home",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "overview"
+  ],
+  "title": "Overview",
+  "uid": "overview"
+}

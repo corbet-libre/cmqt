@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::engine::{Firing, Samples};
+use crate::engine::{Alert, Firing, Samples};
 
 pub const TILE_QUERY: &str = "corbet:tile:value";
 pub const ALERT_QUERY: &str = r#"ALERTS{alertstate="firing"}"#;
@@ -45,7 +45,7 @@ pub fn samples_from(result: &[Value]) -> Samples {
         else {
             continue;
         };
-        s.insert(m["door"].as_str().unwrap_or(""), screen, tile, v);
+        s.insert(screen, tile, v);
     }
     s
 }
@@ -54,11 +54,12 @@ pub fn firing_from(result: &[Value]) -> Firing {
     let alerts = result
         .iter()
         .filter_map(|r| {
-            let m = &r["metric"];
-            Some((
-                m["alertname"].as_str()?.to_string(),
-                m["host_name"].as_str().map(str::to_string),
-            ))
+            let labels = r["metric"]
+                .as_object()?
+                .iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                .collect();
+            Some(Alert { labels })
         })
         .collect();
     Firing { alerts }
@@ -90,12 +91,9 @@ mod tests {
         ]}});
         let r = parse_result(&body).unwrap();
         let s = samples_from(&r);
-        assert_eq!(s.get(cmqt::Tree::Internal, "srv", "ram"), Some(0.63));
-        assert!(
-            s.get(cmqt::Tree::Internal, "srv", "cpu")
-                .is_some_and(f64::is_nan)
-        );
-        assert_eq!(s.get(cmqt::Tree::Internal, "", "orphan"), None);
+        assert_eq!(s.get("srv", "ram"), Some(0.63));
+        assert!(s.get("srv", "cpu").is_some_and(f64::is_nan));
+        assert_eq!(s.get("", "orphan"), None);
     }
 
     #[test]
@@ -109,9 +107,8 @@ mod tests {
         let r = vec![
             json!({"metric":{"alertname":"DeviceDown","host_name":"srv","alertstate":"firing"},"value":[1,"1"]}),
         ];
-        assert_eq!(
-            firing_from(&r).alerts,
-            vec![("DeviceDown".to_string(), Some("srv".to_string()))]
-        );
+        let f = firing_from(&r);
+        assert_eq!(f.alerts[0].labels["host_name"], "srv");
+        assert_eq!(f.alerts[0].labels["alertname"], "DeviceDown");
     }
 }

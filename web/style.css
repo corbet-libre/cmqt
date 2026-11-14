@@ -94,3 +94,8 @@ a.tile:hover, a.tile:focus-visible { border-color: var(--fg); outline: none; }
   .board { grid-template-columns: 1fr; grid-auto-rows: auto; }
   .tile { grid-column: 1; grid-row: auto; min-height: calc(var(--h) * var(--row)); }
 }
+
+/* Topology node state: colour plus the "!" and tooltip text, never colour alone. */
+.topology .node.s-ok { stroke: var(--green); stroke-width: 2.5; }
+.topology .node.s-issue { stroke: var(--red); stroke-width: 4; }
+.topology .node.s-unknown, .topology .node.s-greyed { stroke: var(--grey); }

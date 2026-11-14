@@ -130,7 +130,8 @@ struct Vm {
 struct VmState {
     ram: f64,
     fail: bool,
-    firing: Vec<(String, String)>,
+    /// Firing alerts: `(alertname, [(label, value)])`.
+    firing: Vec<(String, Vec<(String, String)>)>,
 }
 
 impl Vm {
@@ -138,7 +139,7 @@ impl Vm {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         let state = Arc::new(Mutex::new(VmState {
-            ram: 0.63,
+            ram: 63.0,
             fail: false,
             firing: vec![],
         }));
@@ -157,7 +158,13 @@ impl Vm {
                     let r: Vec<Value> = s
                         .firing
                         .iter()
-                        .map(|(a, h)| json!({"metric":{"alertname":a,"host_name":h,"alertstate":"firing"},"value":[1,"1"]}))
+                        .map(|(a, labels)| {
+                            let mut m = json!({"alertname":a,"alertstate":"firing"});
+                            for (k, v) in labels {
+                                m[k] = json!(v);
+                            }
+                            json!({"metric":m,"value":[1,"1"]})
+                        })
                         .collect();
                     (
                         "200 OK",
@@ -165,23 +172,15 @@ impl Vm {
                             .to_string(),
                     )
                 } else {
-                    let m = |sc: &str, t: &str, v: &str, door: Option<&str>| {
-                        let mut metric = json!({"screen":sc,"tile":t});
-                        if let Some(d) = door {
-                            metric["door"] = json!(d);
-                        }
-                        json!({"metric":metric,"value":[1,v]})
-                    };
+                    let m = |sc: &str, t: &str, v: &str| json!({"metric":{"screen":sc,"tile":t},"value":[1,v]});
                     let r = vec![
-                        m("srv", "alive", "1", None),
-                        m("srv", "ram", &s.ram.to_string(), None),
-                        m("srv", "disk", "0.5", None),
-                        m("secret-host", "ram", "0.4", None),
-                        m("overview", "hosts_up", "3", Some("internal")),
-                        m("overview", "hosts_up", "2", Some("public")),
-                        m("overview", "secret", "0.1", None),
-                        m("overview", "hidden", "0.1", None),
-                        m("laptop", "ram", "0.2", None),
+                        m("srv", "alive", "1"),
+                        m("srv", "cpu", "5"),
+                        m("srv", "ram", &s.ram.to_string()),
+                        m("srv", "disk", "50"),
+                        m("srv", "io", "1"),
+                        m("archlxc", "ram", "40"),
+                        m("overview", "home", "0"),
                     ];
                     (
                         "200 OK",
@@ -283,7 +282,7 @@ struct Server {
 impl Server {
     fn start(dir: &Path, broker_port: u16, vm: &Vm, interval_s: u64, extra: &str) -> Server {
         let cfg = dir.join("cmqt.toml");
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cgrf");
         std::fs::write(
             &cfg,
             format!(
@@ -321,13 +320,27 @@ fn online_count(w: &Watcher, tree: &str) -> usize {
 
 // ------------------------------------------------------------------ tests
 
+fn alert(name: &str, labels: &[(&str, &str)]) -> (String, Vec<(String, String)>) {
+    (
+        name.into(),
+        labels
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+    )
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn topics_retention_and_public_isolation() {
     let dir = scratch("topics");
     let (p, mp) = (free_port(), free_port());
     let broker = Broker::start(&dir, p, mp);
     let vm = Vm::start();
-    vm.state.lock().unwrap().firing = vec![("DeviceDiskFull".into(), "srv".into())];
+    // archlxc is internal-only (home site); fra-0 is public (Frankfurt site)
+    vm.state.lock().unwrap().firing = vec![
+        alert("DeviceDown", &[("host_name", "archlxc"), ("site", "0x2A")]),
+        alert("DeviceDown", &[("host_name", "fra-0"), ("site", "0x20")]),
+    ];
     let _server = Server::start(&dir, broker.port, &vm, 2, "");
 
     // Wait until the server has published, then subscribe LATE: everything
@@ -338,18 +351,20 @@ async fn topics_retention_and_public_isolation() {
         .await;
     let all = Watcher::new(broker.port, "#").await;
     all.wait_for("retained board", |w| {
-        w.last("public/_online").is_some()
+        w.last("public/_playlist").is_some()
             && w.last("internal/_playlist").is_some()
+            && w.last("internal/topology/fra-0").is_some()
+            && w.last("public/topology/fra-0").is_some()
             && w.last("internal/srv/disk").is_some()
     })
     .await;
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // tile payload per contract
+    // internal tile payload: value, display, state
     let ram = all.last("internal/srv/ram").unwrap();
     assert!(ram.retain, "tiles are retained");
-    assert_eq!(ram.payload["d"], "63 %");
-    assert_eq!(ram.payload["c"], "green");
+    assert_eq!(ram.payload["v"], 63.0);
+    assert_eq!(ram.payload["d"], "63.0 %");
     assert_eq!(ram.payload["s"], "ok");
     assert!(ram.payload["t"].as_u64().unwrap() > 1_700_000_000);
     // message expiry = 3 x interval (remaining time may already be lower)
@@ -358,35 +373,91 @@ async fn topics_retention_and_public_isolation() {
         "expiry {:?}",
         ram.expiry
     );
-    // alert -> issue, greyed, per-door value
-    assert_eq!(all.last("internal/srv/disk").unwrap().payload["s"], "issue");
+    // aggregate state comes from the alert match, scoped by site and host
     assert_eq!(
-        all.last("internal/laptop/ram").unwrap().payload["s"],
+        all.last("internal/overview/home").unwrap().payload["s"],
+        "issue"
+    );
+    assert_eq!(
+        all.last("internal/overview/fra_brh").unwrap().payload["s"],
+        "issue"
+    );
+    assert_eq!(
+        all.last("internal/overview/hel_pmd").unwrap().payload["s"],
+        "ok"
+    );
+    assert_eq!(
+        all.last("internal/archlxc/alive").unwrap().payload["s"],
+        "issue"
+    );
+    assert_eq!(
+        all.last("internal/elitebook/ram").unwrap().payload["s"],
         "greyed"
     );
+
+    // public tree: state only, and archlxc never colours a public tile
+    let pub_home = all.last("public/overview/home").unwrap().payload;
+    assert!(pub_home["v"].is_null());
     assert_eq!(
-        all.last("internal/overview/hosts_up").unwrap().payload["d"],
-        "3"
+        (pub_home["d"].as_str(), pub_home["s"].as_str()),
+        (Some("OK"), Some("ok"))
+    );
+    let pub_fra = all.last("public/overview/fra_brh").unwrap().payload;
+    assert_eq!(
+        (pub_fra["d"].as_str(), pub_fra["c"].as_str()),
+        (Some("Issue"), Some("red"))
+    );
+    let pub_ram = all.last("public/srv/ram").unwrap().payload;
+    assert!(pub_ram["v"].is_null());
+    assert_eq!(pub_ram["d"], "OK");
+    assert_eq!(
+        all.last("public/overview/hel_pmd").unwrap().payload["d"],
+        "OK"
+    );
+
+    // topology: one tile per node, none for planned nodes
+    assert_eq!(
+        all.last("internal/topology/fra-0").unwrap().payload["s"],
+        "issue"
     );
     assert_eq!(
-        all.last("public/overview/hosts_up").unwrap().payload["d"],
-        "2"
+        all.last("internal/topology/srv").unwrap().payload["d"],
+        "OK"
     );
+    assert_eq!(
+        all.last("internal/topology/elitebook").unwrap().payload["s"],
+        "greyed"
+    );
+    assert!(
+        all.last("internal/topology/fra-3").is_none(),
+        "planned node has no tile"
+    );
+    assert_eq!(
+        all.last("internal/topology/archlxc").unwrap().payload["s"],
+        "issue"
+    );
+    assert!(all.last("public/topology/archlxc").is_none());
+    assert_eq!(
+        all.last("public/topology/fra-0").unwrap().payload["s"],
+        "issue"
+    );
+
     // layout
     let lay = all.last("internal/srv/_layout").unwrap().payload;
     assert_eq!(lay["schema"], "corbet.obs.layout/1");
-    assert_eq!(lay["tiles"][1]["id"], "ram");
-    assert_eq!(lay["tiles"][1]["grid"], json!({"x":8,"y":0,"w":8,"h":4}));
+    assert_eq!(lay["tiles"][0]["id"], "alive");
     let online = all.last("internal/_online").unwrap().payload;
     assert_eq!(
         (online["state"].as_str(), online["interval_s"].as_u64()),
         (Some("online"), Some(2))
     );
     assert_eq!(lay["generation"], online["generation"]);
-    // playlist: srv has an issue, so it comes first
+    // playlist: screens with issues come first
     let pl = all.last("internal/_playlist").unwrap().payload;
-    assert_eq!(pl["screens"][0], json!({"name":"srv","issue":true}));
-    assert_eq!(pl["screens"][1]["issue"], false);
+    let screens = pl["screens"].as_array().unwrap();
+    let issues = screens.iter().take_while(|s| s["issue"] == true).count();
+    assert!(issues >= 3, "{pl}");
+    assert!(screens.iter().skip(issues).all(|s| s["issue"] == false));
 
     // the public tree never contains internal screens or their names
     let public: Vec<Msg> = all
@@ -396,35 +467,16 @@ async fn topics_retention_and_public_isolation() {
         .collect();
     assert!(!public.is_empty());
     for m in &public {
-        assert!(
-            !m.topic.contains("secret-host") && !m.topic.contains("laptop"),
-            "leak in topic {}",
-            m.topic
-        );
-        assert!(
-            !m.payload.to_string().contains("secret-host"),
-            "leak in {} {}",
-            m.topic,
-            m.payload
-        );
+        for leak in ["archlxc", "office.", "internal"] {
+            assert!(!m.topic.contains(leak), "leak {leak} in topic {}", m.topic);
+            assert!(
+                !m.payload.to_string().contains(leak),
+                "leak {leak} in {} {}",
+                m.topic,
+                m.payload
+            );
+        }
     }
-    let pub_pl = all.last("public/_playlist").unwrap().payload;
-    let names: Vec<&str> = pub_pl["screens"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names.len(), 3);
-    assert!(
-        names
-            .iter()
-            .all(|n| ["overview", "srv", "topology"].contains(n)),
-        "{names:?}"
-    );
-    // the public topology lost its internal node
-    let topo = all.last("public/topology/_layout").unwrap().payload;
-    assert_eq!(topo["topology"]["nodes"].as_array().unwrap().len(), 1);
 
     // a browser on the mounted listener sees client topics, public only
     let web = Watcher::new(broker.mounted_port, "#").await;
@@ -437,7 +489,7 @@ async fn topics_retention_and_public_isolation() {
     assert!(
         web.all()
             .iter()
-            .all(|m| !m.topic.starts_with("internal/") && !m.topic.contains("secret-host"))
+            .all(|m| !m.topic.starts_with("internal/") && !m.topic.contains("archlxc"))
     );
 }
 
@@ -457,16 +509,14 @@ async fn publishes_on_change_only_and_refreshes() {
     .await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(w.on("internal/srv/ram").len(), 1);
-    vm.state.lock().unwrap().ram = 0.95;
+    vm.state.lock().unwrap().ram = 95.0;
     w.wait_for("second _online", |w| online_count(w, "internal") >= 2)
         .await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     let ram = w.on("internal/srv/ram");
     assert_eq!(ram.len(), 2, "the change is published");
-    assert_eq!(
-        (ram[1].payload["d"].as_str(), ram[1].payload["c"].as_str()),
-        (Some("95 %"), Some("red"))
-    );
+    assert_eq!(ram[1].payload["d"], "95.0 %");
+    assert_ne!(ram[0].payload["c"], ram[1].payload["c"]);
     assert_eq!(
         w.on("internal/srv/disk").len(),
         1,
@@ -603,7 +653,7 @@ async fn generation_mismatch_withholds_tiles() {
     );
     // rules catch up: tiles flow and the board is online again
     let gm = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/manifest.json"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cgrf/manifest.json"),
     )
     .unwrap();
     let gm: Value = serde_json::from_str(&gm).unwrap();

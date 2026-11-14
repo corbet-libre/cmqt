@@ -1,0 +1,372 @@
+{
+  "corbet": {
+    "door": "internal",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": true,
+    "kind": "device",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "office.win.vm.srv"
+  },
+  "links": [
+    {
+      "title": "site.home",
+      "type": "link",
+      "url": "/d/site.home"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    },
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [],
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "office.win.vm.srv",
+            "tile": "alive"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "office.win.vm.srv"
+        },
+        "tile": "alive"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Heartbeat",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "office.win.vm.srv",
+            "tile": "cpu"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "office.win.vm.srv"
+        },
+        "tile": "cpu"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20.0
+              },
+              {
+                "color": "red",
+                "value": 50.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "title": "CPU",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "office.win.vm.srv",
+            "tile": "ram"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "office.win.vm.srv"
+        },
+        "tile": "ram"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80.0
+              },
+              {
+                "color": "red",
+                "value": 92.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "title": "Memory",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "office.win.vm.srv",
+            "tile": "disk"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "office.win.vm.srv"
+        },
+        "tile": "disk"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80.0
+              },
+              {
+                "color": "red",
+                "value": 90.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "id": 4,
+      "title": "Disk",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "office.win.vm.srv",
+            "tile": "io"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "office.win.vm.srv"
+        },
+        "tile": "io"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20.0
+              },
+              {
+                "color": "red",
+                "value": 50.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "id": 5,
+      "title": "I/O",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "office.win.vm.srv",
+            "tile": "net"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "office.win.vm.srv"
+        },
+        "tile": "net"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "id": 6,
+      "title": "Network",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [],
+        "pages": false,
+        "record": {
+          "labels": {
+            "screen": "office.win.vm.srv",
+            "tile": "kernel"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "office.win.vm.srv"
+        },
+        "tile": "kernel"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "id": 7,
+      "title": "Kernel/hardware",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "device",
+    "vm"
+  ],
+  "title": "office.win.vm.srv",
+  "uid": "office.win.vm.srv"
+}

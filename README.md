@@ -63,15 +63,22 @@ checks retained topics, publish-on-change, refresh, last will on SIGKILL,
 expiry, VictoriaMetrics down, generation mismatch, republish after a broker
 restart, public/internal separation and the read-only public ACL.
 
+## State rules (contract §3, §3b)
+
+* Alerts match on `alertname` in the panel's `alerts` AND every label of its `scope` (a value may be a list, any of).
+* Device tiles: `issue` on a match, `ok` with a value, else `unknown`. Aggregate tiles (site, overview, topology): the state comes from the match alone; their value is shown on the internal tree only.
+* Public tree: state only. `v` null, `d` is `OK`, `Issue` or `No data`, colour from the state. Public panels mirror the internal series through their `record` labels.
+* Topology: one tile `topology/<device>` per node, from the firing alerts with that `host_name`; `greyed` for greyed nodes, none for planned nodes. The web client colours the SVG boxes with them.
+* The integration tests run against the real cgrf golden dashboards (`crates/cmqt-server/tests/fixtures/cgrf`, copied from cgrf commit in `FROM_CGRF_COMMIT`).
+
 ## CONTRACT QUESTIONs
 
 | # | Gap | Smallest choice made |
 |---|---|---|
 | 1 | §5 says a tile is published only on change and every message expires after 3 x `interval_s`; a quiet tile would expire from the broker and go stale in the client after 90 s. | Unchanged messages (tiles, layouts, playlist) are re-sent every `refresh_intervals` (default 2, max 2) intervals with a fresh `t`. `_online` is sent every interval as specified. |
-| 2 | "fires for that screen's `host_name`" is clear on device screens only. | Device screens match on the screen name. Other kinds (site, overview, topology) match on the panel's `link` device, or on any host when there is no link. |
-| 3 | Recording rule labels are `screen` and `tile` only, but `overview` and `topology` exist in both doors with different content, so two panels would write the same series. | cmqt reads an optional `door` label on the series first (`record.labels.door`), then the unlabelled series. cgrf/cprm should add `door`. |
-| 4 | How cmqt learns the rules' generation is not defined. | Config `prometheus_manifest` points at cprm's `prometheus/manifest.json`; its `generation` is compared each interval. An unreadable file counts as a mismatch. |
-| 5 | The topology canvas has no per-device state, so its boxes cannot be coloured. | Boxes link to the device screens and show planned (dashed) and greyed; no state colour. cgrf could add one tile per device. |
-| 6 | `d` and `c` for `unknown`/`greyed` and the `v` type are not defined. | `v` is `null`, `d` is `n/a`, `c` is `grey`. |
-| 7 | Staleness compares the client clock with the server's `t`. | Implemented as written; a client clock off by more than 90 s shows "observability unreachable". |
-| 8 | The web client also treats an old `_online.t` as unreachable (retained `online` would otherwise outlive a dead server by up to 3 intervals only via expiry). | Added: `now - _online.t > 3 x interval_s` is stale. |
+| 2 | How cmqt learns the rules' generation is not defined. | Config `prometheus_manifest` points at cprm's `prometheus/manifest.json`; its `generation` is compared each interval. An unreadable file counts as a mismatch. |
+| 3 | `d`, `c` and `v` for internal `unknown`/`greyed` tiles are not defined. | `v` null, `d` `n/a`, `c` `grey` (or the state colour when only the value is missing). |
+| 4 | Staleness compares the client clock with the server's `t`. | Implemented as written; a client clock off by more than 90 s shows "observability unreachable". |
+| 5 | The web client also treats an old `_online.t` as unreachable. | Added: `now - _online.t > 3 x interval_s` is stale. |
+| 6 | A device tile without `scope` is not covered. | Falls back to `host_name` = the screen name. |
+| 7 | Unknown scope value with a missing label on the alert. | A missing label never matches. |

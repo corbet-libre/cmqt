@@ -1,63 +1,108 @@
 //! Pure board logic: tile state, playlist, layout, change detection.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cmqt::{Layout, LayoutTile, Playlist, PlaylistEntry, TileMsg, TileState, Tree};
 
 use crate::dashboard::{Screen, TileDef, TreeBoard};
 use crate::format::{format_value, threshold_colour};
 
-/// Latest values of `corbet:tile:value`, keyed by `(door label, screen, tile)`.
-/// The door label is empty when cprm sets none.
+/// Latest values of `corbet:tile:value`, keyed by `(screen, tile)`.
 #[derive(Debug, Default)]
 pub struct Samples {
-    map: HashMap<(String, String, String), f64>,
+    map: HashMap<(String, String), f64>,
 }
 
 impl Samples {
-    pub fn insert(&mut self, door: &str, screen: &str, tile: &str, v: f64) {
-        self.map
-            .insert((door.into(), screen.into(), tile.into()), v);
+    pub fn insert(&mut self, screen: &str, tile: &str, v: f64) {
+        self.map.insert((screen.into(), tile.into()), v);
     }
 
-    /// Look up a tile: the series labelled with this tree's door first, then
-    /// the one without a `door` label. See README (CONTRACT QUESTION 3).
-    pub fn get(&self, tree: Tree, screen: &str, tile: &str) -> Option<f64> {
-        let k = |d: &str| (d.to_string(), screen.to_string(), tile.to_string());
+    pub fn get(&self, screen: &str, tile: &str) -> Option<f64> {
         self.map
-            .get(&k(tree.name()))
-            .or_else(|| self.map.get(&k("")))
+            .get(&(screen.to_string(), tile.to_string()))
             .copied()
     }
 }
 
-/// Firing alerts as `(alertname, host_name)`.
+/// One firing alert with all its labels (`alertname` included).
+#[derive(Debug, Default, Clone)]
+pub struct Alert {
+    pub labels: BTreeMap<String, String>,
+}
+
+impl Alert {
+    pub fn new(name: &str, labels: &[(&str, &str)]) -> Alert {
+        let mut l: BTreeMap<String, String> = labels
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        l.insert("alertname".into(), name.into());
+        Alert { labels: l }
+    }
+}
+
+/// Firing alerts.
 #[derive(Debug, Default)]
 pub struct Firing {
-    pub alerts: Vec<(String, Option<String>)>,
+    pub alerts: Vec<Alert>,
 }
 
 impl Firing {
-    fn matches(&self, names: &[String], host: Option<&str>) -> bool {
+    /// `alertname` in `names` AND every scope label matches (a scope value
+    /// matches when the alert's label equals any of the listed values).
+    pub fn matches(&self, names: &[String], scope: &BTreeMap<String, Vec<String>>) -> bool {
+        self.alerts.iter().any(|a| {
+            a.labels.get("alertname").is_some_and(|n| names.contains(n))
+                && scope
+                    .iter()
+                    .all(|(k, vals)| a.labels.get(k).is_some_and(|v| vals.contains(v)))
+        })
+    }
+
+    /// Any firing alert whose `host_name` is `device` (topology nodes).
+    pub fn device_has_alert(&self, device: &str) -> bool {
         self.alerts
             .iter()
-            .any(|(n, h)| names.contains(n) && (host.is_none() || h.as_deref() == host))
+            .any(|a| a.labels.get("host_name").is_some_and(|h| h == device))
     }
 }
 
-/// The `host_name` a tile's alerts are matched against: the screen itself on a
-/// device screen, the linked device elsewhere, otherwise any host.
-/// See README (CONTRACT QUESTION 2).
-fn alert_host<'a>(screen: &'a Screen, tile: &'a TileDef) -> Option<&'a str> {
-    if screen.kind == "device" {
-        Some(&screen.name)
-    } else {
-        tile.link.as_deref()
+fn state_colour(s: TileState) -> &'static str {
+    match s {
+        TileState::Ok => "green",
+        TileState::Issue => "red",
+        TileState::Unknown | TileState::Greyed => "grey",
     }
 }
 
-/// Compute one tile. `samples` is `None` when VictoriaMetrics could not be
-/// queried.
+/// The state word shown on the public tree (and on topology nodes).
+pub fn state_word(s: TileState) -> &'static str {
+    match s {
+        TileState::Ok => "OK",
+        TileState::Issue => "Issue",
+        TileState::Unknown | TileState::Greyed => "No data",
+    }
+}
+
+fn state_only(s: TileState, now: u64) -> TileMsg {
+    TileMsg {
+        v: None,
+        d: state_word(s).into(),
+        c: state_colour(s).into(),
+        s,
+        t: now,
+    }
+}
+
+/// Compute one tile. `samples`/`firing` are `None` when VictoriaMetrics could
+/// not be queried.
+///
+/// * Device tiles: `issue` when a scoped alert fires, `ok` with a value,
+///   otherwise `unknown`.
+/// * Aggregate tiles (site, overview, topology): the state comes from the
+///   alert match alone; the recorded value is shown on the internal tree only.
+/// * Public tree: state only (`v` null, `d` = OK / Issue / No data).
 pub fn compute_tile(
     tree: Tree,
     screen: &Screen,
@@ -66,35 +111,88 @@ pub fn compute_tile(
     firing: Option<&Firing>,
     now: u64,
 ) -> TileMsg {
-    let unknown = |s: TileState| TileMsg {
-        v: None,
-        d: "n/a".into(),
-        c: "grey".into(),
-        s,
-        t: now,
-    };
     if screen.greyed {
-        return unknown(TileState::Greyed);
+        return if tree == Tree::Public {
+            state_only(TileState::Greyed, now)
+        } else {
+            TileMsg {
+                v: None,
+                d: "n/a".into(),
+                c: "grey".into(),
+                s: TileState::Greyed,
+                t: now,
+            }
+        };
     }
     let value = samples
-        .and_then(|s| s.get(tree, &screen.name, &tile.id))
+        .and_then(|s| s.get(&tile.record.0, &tile.record.1))
         .filter(|v| v.is_finite());
-    let issue = firing.is_some_and(|f| f.matches(&tile.alerts, alert_host(screen, tile)));
+    let issue = firing.is_some_and(|f| f.matches(&tile.alerts, &tile.scope));
+    let aggregate = screen.kind != "device";
+    let state = if issue {
+        TileState::Issue
+    } else if aggregate {
+        if firing.is_some() {
+            TileState::Ok
+        } else {
+            TileState::Unknown
+        }
+    } else if value.is_some() {
+        TileState::Ok
+    } else {
+        TileState::Unknown
+    };
+    if tree == Tree::Public {
+        return state_only(state, now);
+    }
     match value {
-        None if issue => unknown(TileState::Issue),
-        None => unknown(TileState::Unknown),
         Some(v) => TileMsg {
             v: Some(v),
             d: format_value(v, tile.unit.as_deref(), tile.decimals),
             c: threshold_colour(v, &tile.steps),
-            s: if issue {
-                TileState::Issue
-            } else {
-                TileState::Ok
-            },
+            s: state,
+            t: now,
+        },
+        None => TileMsg {
+            v: None,
+            d: "n/a".into(),
+            c: state_colour(state).into(),
+            s: state,
             t: now,
         },
     }
+}
+
+/// One tile per topology node (`topology/<device>`): state from the firing
+/// alerts of that device; greyed nodes are `greyed`, planned nodes get none.
+pub fn topology_tiles(
+    topology: &serde_json::Value,
+    firing: Option<&Firing>,
+    now: u64,
+) -> Vec<(String, TileMsg)> {
+    let Some(nodes) = topology.get("nodes").and_then(serde_json::Value::as_array) else {
+        return vec![];
+    };
+    nodes
+        .iter()
+        .filter_map(|n| {
+            let device = n.get("device")?.as_str()?;
+            let flag = |k: &str| n.get(k).and_then(serde_json::Value::as_bool) == Some(true);
+            if flag("planned") {
+                return None;
+            }
+            let state = if flag("greyed") {
+                TileState::Greyed
+            } else {
+                match firing {
+                    None => TileState::Unknown,
+                    Some(f) if f.device_has_alert(device) => TileState::Issue,
+                    Some(_) => TileState::Ok,
+                }
+            };
+            Some((device.to_string(), state_only(state, now)))
+        })
+        .collect()
 }
 
 /// Does the screen have an issue, given the computed tiles?
@@ -215,8 +313,9 @@ mod tests {
     use super::*;
     use crate::dashboard::Step;
     use cmqt::Grid;
+    use serde_json::json;
 
-    fn tile(id: &str, alerts: &[&str], link: Option<&str>) -> TileDef {
+    fn tile(id: &str, alerts: &[&str], scope: &[(&str, &[&str])], link: Option<&str>) -> TileDef {
         TileDef {
             id: id.into(),
             title: id.into(),
@@ -240,11 +339,18 @@ mod tests {
             ],
             alerts: alerts.iter().map(|s| s.to_string()).collect(),
             link: link.map(Into::into),
-            record_door: None,
+            scope: scope
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.iter().map(|x| x.to_string()).collect()))
+                .collect(),
+            record: ("".into(), id.into()),
         }
     }
 
-    fn screen(name: &str, kind: &str, greyed: bool, tiles: Vec<TileDef>) -> Screen {
+    fn screen(name: &str, kind: &str, greyed: bool, mut tiles: Vec<TileDef>) -> Screen {
+        for t in &mut tiles {
+            t.record.0 = name.into();
+        }
         Screen {
             name: name.into(),
             title: name.into(),
@@ -257,8 +363,16 @@ mod tests {
 
     fn samples(screen: &str, tile: &str, v: f64) -> Samples {
         let mut s = Samples::default();
-        s.insert("", screen, tile, v);
+        s.insert(screen, tile, v);
         s
+    }
+
+    fn firing(a: &[Alert]) -> Firing {
+        Firing { alerts: a.to_vec() }
+    }
+
+    fn calc(tree: Tree, sc: &Screen, sm: Option<&Samples>, f: Option<&Firing>) -> TileMsg {
+        compute_tile(tree, sc, &sc.tiles[0], sm, f, 100)
     }
 
     #[test]
@@ -267,111 +381,195 @@ mod tests {
             "srv",
             "device",
             false,
-            vec![tile("ram", &["DeviceMemoryLow"], None)],
+            vec![tile(
+                "ram",
+                &["DeviceMemoryLow"],
+                &[("host_name", &["srv"])],
+                None,
+            )],
         );
-        let m = compute_tile(
+        let f = Firing::default();
+        let m = calc(
             Tree::Internal,
             &sc,
-            &sc.tiles[0],
             Some(&samples("srv", "ram", 0.63)),
-            Some(&Firing::default()),
-            100,
+            Some(&f),
         );
         assert_eq!(
             (m.d.as_str(), m.c.as_str(), m.s),
             ("63 %", "green", TileState::Ok)
         );
-        let m = compute_tile(
+        let m = calc(
             Tree::Internal,
             &sc,
-            &sc.tiles[0],
             Some(&samples("srv", "ram", 0.95)),
-            Some(&Firing::default()),
-            100,
+            Some(&f),
         );
         assert_eq!(m.c, "red");
     }
 
     #[test]
-    fn issue_only_for_this_host_and_alert() {
+    fn issue_needs_alertname_and_scope() {
         let sc = screen(
             "srv",
             "device",
             false,
-            vec![tile("ram", &["DeviceMemoryLow"], None)],
+            vec![tile(
+                "ram",
+                &["DeviceMemoryLow"],
+                &[("host_name", &["srv"])],
+                None,
+            )],
         );
         let sm = samples("srv", "ram", 0.5);
-        let f = |n: &str, h: &str| Firing {
-            alerts: vec![(n.into(), Some(h.into()))],
-        };
-        let go =
-            |f: &Firing| compute_tile(Tree::Internal, &sc, &sc.tiles[0], Some(&sm), Some(f), 1).s;
-        assert_eq!(go(&f("DeviceMemoryLow", "srv")), TileState::Issue);
-        assert_eq!(go(&f("DeviceMemoryLow", "fra-0")), TileState::Ok);
-        assert_eq!(go(&f("DeviceDiskFull", "srv")), TileState::Ok);
+        let go = |a: Alert| calc(Tree::Internal, &sc, Some(&sm), Some(&firing(&[a]))).s;
+        assert_eq!(
+            go(Alert::new("DeviceMemoryLow", &[("host_name", "srv")])),
+            TileState::Issue
+        );
+        assert_eq!(
+            go(Alert::new("DeviceMemoryLow", &[("host_name", "fra-0")])),
+            TileState::Ok
+        );
+        assert_eq!(
+            go(Alert::new("DeviceDiskFull", &[("host_name", "srv")])),
+            TileState::Ok
+        );
     }
 
     #[test]
-    fn non_device_screens_match_on_link_or_any_host() {
+    fn scope_lists_mean_any_of_and_all_labels_must_match() {
         let sc = screen(
             "overview",
             "overview",
             false,
-            vec![
-                tile("a", &["DeviceDown"], Some("fra-0")),
-                tile("b", &["DeviceDown"], None),
-            ],
+            vec![tile(
+                "fra",
+                &["DeviceDown"],
+                &[("site", &["0x20"]), ("host_name", &["fra-0", "fra-1"])],
+                None,
+            )],
         );
-        let mut sm = samples("overview", "a", 1.0);
-        sm.insert("", "overview", "b", 1.0);
-        let f = Firing {
-            alerts: vec![("DeviceDown".into(), Some("fra-0".into()))],
+        let go = |a: Alert| calc(Tree::Internal, &sc, None, Some(&firing(&[a]))).s;
+        assert_eq!(
+            go(Alert::new(
+                "DeviceDown",
+                &[("site", "0x20"), ("host_name", "fra-1")]
+            )),
+            TileState::Issue
+        );
+        assert_eq!(
+            go(Alert::new(
+                "DeviceDown",
+                &[("site", "0x20"), ("host_name", "fra-9")]
+            )),
+            TileState::Ok
+        );
+        assert_eq!(
+            go(Alert::new(
+                "DeviceDown",
+                &[("site", "0x21"), ("host_name", "fra-0")]
+            )),
+            TileState::Ok
+        );
+        assert_eq!(
+            go(Alert::new("DeviceDown", &[("host_name", "fra-0")])),
+            TileState::Ok,
+            "missing site label"
+        );
+    }
+
+    #[test]
+    fn aggregate_state_ignores_the_value() {
+        let sc = screen(
+            "overview",
+            "overview",
+            false,
+            vec![tile("a", &["DeviceDown"], &[("site", &["0x20"])], None)],
+        );
+        // no recorded value at all: still OK, because the alert match decides
+        let m = calc(
+            Tree::Internal,
+            &sc,
+            Some(&Samples::default()),
+            Some(&Firing::default()),
+        );
+        assert_eq!((m.s, m.v, m.d.as_str()), (TileState::Ok, None, "n/a"));
+        // VictoriaMetrics down: unknown
+        assert_eq!(calc(Tree::Internal, &sc, None, None).s, TileState::Unknown);
+    }
+
+    #[test]
+    fn public_tree_is_state_only() {
+        let sc = screen(
+            "srv",
+            "device",
+            false,
+            vec![tile(
+                "ram",
+                &["DeviceMemoryLow"],
+                &[("host_name", &["srv"])],
+                None,
+            )],
+        );
+        let sm = samples("srv", "ram", 0.95);
+        let ok = calc(Tree::Public, &sc, Some(&sm), Some(&Firing::default()));
+        assert_eq!(
+            (ok.v, ok.d.as_str(), ok.c.as_str(), ok.s),
+            (None, "OK", "green", TileState::Ok)
+        );
+        let f = firing(&[Alert::new("DeviceMemoryLow", &[("host_name", "srv")])]);
+        let bad = calc(Tree::Public, &sc, Some(&sm), Some(&f));
+        assert_eq!(
+            (bad.v, bad.d.as_str(), bad.c.as_str(), bad.s),
+            (None, "Issue", "red", TileState::Issue)
+        );
+        let none = calc(
+            Tree::Public,
+            &sc,
+            Some(&Samples::default()),
+            Some(&Firing::default()),
+        );
+        assert_eq!((none.d.as_str(), none.s), ("No data", TileState::Unknown));
+    }
+
+    #[test]
+    fn public_panel_reads_the_internal_series() {
+        let mut t = tile("ram", &[], &[], None);
+        t.record = ("srv".into(), "ram".into());
+        let sc = Screen {
+            name: "other".into(),
+            title: "".into(),
+            kind: "device".into(),
+            greyed: false,
+            tiles: vec![t],
+            topology: None,
         };
-        let go =
-            |i: usize| compute_tile(Tree::Internal, &sc, &sc.tiles[i], Some(&sm), Some(&f), 1).s;
-        assert_eq!(go(0), TileState::Issue);
-        assert_eq!(go(1), TileState::Issue);
-        let other = Firing {
-            alerts: vec![("DeviceDown".into(), Some("srv".into()))],
-        };
-        let go2 = |i: usize| {
-            compute_tile(
-                Tree::Internal,
-                &sc,
-                &sc.tiles[i],
-                Some(&sm),
-                Some(&other),
-                1,
-            )
-            .s
-        };
-        assert_eq!(go2(0), TileState::Ok);
+        let m = calc(
+            Tree::Public,
+            &sc,
+            Some(&samples("srv", "ram", 0.1)),
+            Some(&Firing::default()),
+        );
+        assert_eq!(m.s, TileState::Ok);
     }
 
     #[test]
     fn unknown_without_value_or_without_victoria() {
-        let sc = screen("srv", "device", false, vec![tile("ram", &[], None)]);
-        let m = compute_tile(
+        let sc = screen("srv", "device", false, vec![tile("ram", &[], &[], None)]);
+        let m = calc(
             Tree::Internal,
             &sc,
-            &sc.tiles[0],
             Some(&Samples::default()),
             Some(&Firing::default()),
-            5,
         );
         assert_eq!((m.s, m.v, m.c.as_str()), (TileState::Unknown, None, "grey"));
-        let m = compute_tile(Tree::Internal, &sc, &sc.tiles[0], None, None, 5);
-        assert_eq!(m.s, TileState::Unknown);
+        assert_eq!(calc(Tree::Internal, &sc, None, None).s, TileState::Unknown);
         let nan = samples("srv", "ram", f64::NAN);
-        let m = compute_tile(
-            Tree::Internal,
-            &sc,
-            &sc.tiles[0],
-            Some(&nan),
-            Some(&Firing::default()),
-            5,
+        assert_eq!(
+            calc(Tree::Internal, &sc, Some(&nan), Some(&Firing::default())).s,
+            TileState::Unknown
         );
-        assert_eq!(m.s, TileState::Unknown);
     }
 
     #[test]
@@ -380,30 +578,40 @@ mod tests {
             "laptop",
             "device",
             true,
-            vec![tile("ram", &["DeviceMemoryLow"], None)],
+            vec![tile(
+                "ram",
+                &["DeviceMemoryLow"],
+                &[("host_name", &["laptop"])],
+                None,
+            )],
         );
-        let f = Firing {
-            alerts: vec![("DeviceMemoryLow".into(), Some("laptop".into()))],
-        };
-        let m = compute_tile(
+        let f = firing(&[Alert::new("DeviceMemoryLow", &[("host_name", "laptop")])]);
+        let m = calc(
             Tree::Internal,
             &sc,
-            &sc.tiles[0],
             Some(&samples("laptop", "ram", 0.5)),
             Some(&f),
-            1,
         );
-        assert_eq!(m.s, TileState::Greyed);
-        assert_eq!(m.v, None);
+        assert_eq!((m.s, m.v), (TileState::Greyed, None));
+        assert_eq!(calc(Tree::Public, &sc, None, None).d, "No data");
     }
 
     #[test]
-    fn door_label_wins_over_unlabelled_series() {
-        let mut s = Samples::default();
-        s.insert("", "overview", "x", 0.1);
-        s.insert("public", "overview", "x", 0.2);
-        assert_eq!(s.get(Tree::Public, "overview", "x"), Some(0.2));
-        assert_eq!(s.get(Tree::Internal, "overview", "x"), Some(0.1));
+    fn topology_node_tiles() {
+        let topo = json!({"nodes":[
+            {"device":"srv"},{"device":"fra-0"},{"device":"fra-3","planned":true},{"device":"office","greyed":true}]});
+        let f = firing(&[Alert::new("DeviceDown", &[("host_name", "fra-0")])]);
+        let t = topology_tiles(&topo, Some(&f), 5);
+        let get = |d: &str| t.iter().find(|(x, _)| x == d).map(|(_, m)| m.clone());
+        assert_eq!(get("srv").unwrap().d, "OK");
+        assert_eq!(get("fra-0").unwrap().s, TileState::Issue);
+        assert!(get("fra-3").is_none(), "planned nodes get no tile");
+        assert_eq!(get("office").unwrap().s, TileState::Greyed);
+        let none = topology_tiles(&topo, None, 5);
+        assert_eq!(
+            none.iter().find(|(x, _)| x == "srv").unwrap().1.s,
+            TileState::Unknown
+        );
     }
 
     #[test]
@@ -468,7 +676,10 @@ mod tests {
             "overview",
             "overview",
             false,
-            vec![tile("x", &[], Some("srv")), tile("y", &[], Some("secret"))],
+            vec![
+                tile("x", &[], &[], Some("srv")),
+                tile("y", &[], &[], Some("secret")),
+            ],
         );
         let tree = TreeBoard {
             screens: vec![a.clone(), screen("srv", "device", false, vec![])],
@@ -482,7 +693,7 @@ mod tests {
     #[test]
     fn topology_is_scrubbed_to_known_devices() {
         let mut topo = screen("topology", "topology", false, vec![]);
-        topo.topology = Some(serde_json::json!({
+        topo.topology = Some(json!({
             "nodes":[{"device":"srv"},{"device":"secret"}],
             "edges":[{"from":"srv","to":"secret","kind":"x"},{"from":"srv","to":"srv","kind":"y"}],
             "brackets":[{"name":"b","members":["srv","secret"]}]
@@ -494,6 +705,6 @@ mod tests {
         let t = l.topology.unwrap();
         assert_eq!(t["nodes"].as_array().unwrap().len(), 1);
         assert_eq!(t["edges"].as_array().unwrap().len(), 1);
-        assert_eq!(t["brackets"][0]["members"], serde_json::json!(["srv"]));
+        assert_eq!(t["brackets"][0]["members"], json!(["srv"]));
     }
 }

@@ -178,6 +178,15 @@ fn evaluate(
             }
             msgs.push(m);
         }
+        if let Some(topo) = &lay.topology {
+            for (device, m) in engine::topology_tiles(topo, vmres.map(|r| &r.1), now) {
+                if !mismatch {
+                    let fp = engine::tile_fingerprint(&m);
+                    link.put(&topic::tile(&screen.name, &device), &m, &fp, now, refresh);
+                }
+                msgs.push(m);
+            }
+        }
         statuses.push((screen.name.clone(), engine::screen_has_issue(&msgs)));
     }
     let pl = engine::playlist(cfg.interval_s, &statuses);

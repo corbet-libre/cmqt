@@ -1,0 +1,376 @@
+{
+  "corbet": {
+    "door": "internal",
+    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "greyed": false,
+    "kind": "device",
+    "schema": "corbet.obs.dashboard/1",
+    "screen": "fra-0"
+  },
+  "links": [
+    {
+      "title": "site.fra.brh",
+      "type": "link",
+      "url": "/d/site.fra.brh"
+    },
+    {
+      "title": "topology",
+      "type": "link",
+      "url": "/d/topology"
+    },
+    {
+      "title": "overview",
+      "type": "link",
+      "url": "/d/overview"
+    }
+  ],
+  "panels": [
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceDown",
+          "DeviceHeartbeatLate"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "fra-0",
+            "tile": "alive"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-0"
+        },
+        "tile": "alive"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "min(up{job=\"node-fra\",node=\"brh-fra-k8s-0\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Heartbeat",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceCpuSaturated"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "fra-0",
+            "tile": "cpu"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-0"
+        },
+        "tile": "cpu"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20.0
+              },
+              {
+                "color": "red",
+                "value": 50.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "100 * max(rate(node_pressure_cpu_waiting_seconds_total{job=\"node-fra\",node=\"brh-fra-k8s-0\"}[5m])) or 100 * (1 - avg(rate(node_cpu_seconds_total{job=\"node-fra\",node=\"brh-fra-k8s-0\",mode=\"idle\"}[5m])))",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceMemoryLow"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "fra-0",
+            "tile": "ram"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-0"
+        },
+        "tile": "ram"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80.0
+              },
+              {
+                "color": "red",
+                "value": 92.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "100 * (1 - sum(node_memory_MemAvailable_bytes{job=\"node-fra\",node=\"brh-fra-k8s-0\"}) / sum(node_memory_MemTotal_bytes{job=\"node-fra\",node=\"brh-fra-k8s-0\"}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Memory",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceDiskFull"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "fra-0",
+            "tile": "disk"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-0"
+        },
+        "tile": "disk"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80.0
+              },
+              {
+                "color": "red",
+                "value": 90.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "max(100 * (1 - node_filesystem_avail_bytes{job=\"node-fra\",node=\"brh-fra-k8s-0\",fstype!~\"tmpfs|overlay|squashfs|ramfs|devtmpfs\"} / node_filesystem_size_bytes{job=\"node-fra\",node=\"brh-fra-k8s-0\",fstype!~\"tmpfs|overlay|squashfs|ramfs|devtmpfs\"}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Disk",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceIoSaturated"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "fra-0",
+            "tile": "io"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-0"
+        },
+        "tile": "io"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20.0
+              },
+              {
+                "color": "red",
+                "value": 50.0
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "100 * max(rate(node_pressure_io_waiting_seconds_total{job=\"node-fra\",node=\"brh-fra-k8s-0\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "I/O",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceNetErrors"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "fra-0",
+            "tile": "net"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "fra-0"
+        },
+        "tile": "net"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(node_network_receive_errs_total{job=\"node-fra\",node=\"brh-fra-k8s-0\"}[5m])) + sum(rate(node_network_transmit_errs_total{job=\"node-fra\",node=\"brh-fra-k8s-0\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Network",
+      "type": "stat"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "corbet",
+    "device",
+    "k8s-node"
+  ],
+  "title": "fra-0",
+  "uid": "fra-0"
+}
