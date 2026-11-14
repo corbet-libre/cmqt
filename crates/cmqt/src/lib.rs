@@ -169,7 +169,12 @@ pub struct Online {
 impl Online {
     /// The last-will payload.
     pub fn offline() -> Online {
-        Online { state: OnlineState::Offline, t: None, interval_s: None, generation: None }
+        Online {
+            state: OnlineState::Offline,
+            t: None,
+            interval_s: None,
+            generation: None,
+        }
     }
 }
 
@@ -192,7 +197,9 @@ pub fn is_tile_stale(now: u64, t: u64, interval_s: u64) -> bool {
 /// is older than three intervals. A missing `_online` counts as unreachable.
 /// The interval comes from `_online` itself.
 pub fn freshness(now: u64, tile_t: u64, online: Option<&Online>) -> Freshness {
-    let Some(o) = online else { return Freshness::Unreachable };
+    let Some(o) = online else {
+        return Freshness::Unreachable;
+    };
     match o.state {
         OnlineState::Offline => Freshness::Unreachable,
         OnlineState::GenerationMismatch => Freshness::Updating,
@@ -212,7 +219,12 @@ mod tests {
     use super::*;
 
     fn online(state: OnlineState, interval: u64) -> Online {
-        Online { state, t: Some(0), interval_s: Some(interval), generation: None }
+        Online {
+            state,
+            t: Some(0),
+            interval_s: Some(interval),
+            generation: None,
+        }
     }
 
     #[test]
@@ -228,7 +240,10 @@ mod tests {
         assert_eq!(freshness(1010, 1000, Some(&on)), Freshness::Fresh);
         assert_eq!(freshness(1100, 1000, Some(&on)), Freshness::Unreachable);
         assert_eq!(freshness(1010, 1000, None), Freshness::Unreachable);
-        assert_eq!(freshness(1010, 1000, Some(&Online::offline())), Freshness::Unreachable);
+        assert_eq!(
+            freshness(1010, 1000, Some(&Online::offline())),
+            Freshness::Unreachable
+        );
         let mm = online(OnlineState::GenerationMismatch, 30);
         assert_eq!(freshness(1010, 1000, Some(&mm)), Freshness::Updating);
     }
@@ -254,7 +269,13 @@ mod tests {
 
     #[test]
     fn display_comparison_ignores_value_and_time() {
-        let a = TileMsg { v: Some(0.5), d: "50 %".into(), c: "green".into(), s: TileState::Ok, t: 1 };
+        let a = TileMsg {
+            v: Some(0.5),
+            d: "50 %".into(),
+            c: "green".into(),
+            s: TileState::Ok,
+            t: 1,
+        };
         let mut b = a.clone();
         b.v = Some(0.501);
         b.t = 99;

@@ -6,9 +6,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use cmqt::{Online, OnlineState, Tree, topic};
 use rumqttc::v5::mqttbytes::QoS;
+use rumqttc::v5::mqttbytes::v5::PublishProperties;
 use rumqttc::v5::mqttbytes::v5::{LastWill, LastWillProperties};
 use rumqttc::v5::{AsyncClient, Event, EventLoop, MqttOptions, mqttbytes::v5::Packet};
-use rumqttc::v5::mqttbytes::v5::PublishProperties;
 
 use crate::config::Config;
 use crate::dashboard::{self, Board};
@@ -16,7 +16,9 @@ use crate::engine::{self, Tracker};
 use crate::vm;
 
 fn now_s() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// One broker connection for one tree.
@@ -58,26 +60,45 @@ impl Link {
         let (client, eventloop) = AsyncClient::new(opts, 1024);
         let reconnected = Arc::new(AtomicBool::new(true));
         tokio::spawn(drive(eventloop, reconnected.clone(), tree));
-        Link { tree, client, reconnected, tracker: Tracker::default(), expiry }
+        Link {
+            tree,
+            client,
+            reconnected,
+            tracker: Tracker::default(),
+            expiry,
+        }
     }
 
     /// Queue a retained QoS 1 publish with message expiry. A full queue (broker
     /// down) drops the message: the reconnect republishes everything.
     fn publish(&self, rel_topic: &str, payload: Vec<u8>) {
-        let props = PublishProperties { message_expiry_interval: Some(self.expiry), ..Default::default() };
+        let props = PublishProperties {
+            message_expiry_interval: Some(self.expiry),
+            ..Default::default()
+        };
         let topic = format!("{}{}", self.tree.prefix(), rel_topic);
         if let Err(e) =
-            self.client.try_publish_with_properties(topic, QoS::AtLeastOnce, true, payload, props)
+            self.client
+                .try_publish_with_properties(topic, QoS::AtLeastOnce, true, payload, props)
         {
             eprintln!("cmqt-server: {} publish dropped: {e}", self.tree.name());
         }
     }
 
-    fn put<T: serde::Serialize>(&mut self, rel_topic: &str, value: &T, fingerprint: &str, now: u64, refresh: u64) {
-        if self.tracker.should_publish(rel_topic, fingerprint, now, refresh) {
-            if let Ok(p) = serde_json::to_vec(value) {
-                self.publish(rel_topic, p);
-            }
+    fn put<T: serde::Serialize>(
+        &mut self,
+        rel_topic: &str,
+        value: &T,
+        fingerprint: &str,
+        now: u64,
+        refresh: u64,
+    ) {
+        if self
+            .tracker
+            .should_publish(rel_topic, fingerprint, now, refresh)
+            && let Ok(p) = serde_json::to_vec(value)
+        {
+            self.publish(rel_topic, p);
         }
     }
 }
@@ -104,11 +125,16 @@ enum Gen {
 }
 
 fn check_generation(cfg: &Config, board: &Board) -> Gen {
-    let Some(p) = &cfg.prometheus_manifest else { return Gen::Match };
+    let Some(p) = &cfg.prometheus_manifest else {
+        return Gen::Match;
+    };
     match dashboard::read_generation(p) {
         Ok(g) if g == board.generation => Gen::Match,
         Ok(g) => {
-            eprintln!("cmqt-server: generation mismatch: dashboards {} vs rules {g}", board.generation);
+            eprintln!(
+                "cmqt-server: generation mismatch: dashboards {} vs rules {g}",
+                board.generation
+            );
             Gen::Mismatch
         }
         Err(e) => {
@@ -159,7 +185,11 @@ fn evaluate(
         link.put(topic::PLAYLIST, &pl, &fp, now, refresh);
     }
     let online = Online {
-        state: if mismatch { OnlineState::GenerationMismatch } else { OnlineState::Online },
+        state: if mismatch {
+            OnlineState::GenerationMismatch
+        } else {
+            OnlineState::Online
+        },
         t: Some(now),
         interval_s: Some(cfg.interval_s),
         generation: Some(board.generation.clone()),

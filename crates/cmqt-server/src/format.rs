@@ -7,7 +7,11 @@ fn num(v: f64, decimals: Option<u32>, default_max: usize) -> String {
         Some(n) => format!("{v:.n$}", n = n as usize),
         None => {
             let s = format!("{v:.n$}", n = default_max);
-            if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s }
+            if s.contains('.') {
+                s.trim_end_matches('0').trim_end_matches('.').to_string()
+            } else {
+                s
+            }
         }
     };
     if s.starts_with('-') && s[1..].chars().all(|c| c == '0' || c == '.') {
@@ -33,9 +37,17 @@ pub fn format_value(v: f64, unit: Option<&str>, decimals: Option<u32>) -> String
     match unit.unwrap_or("") {
         "percent" => format!("{} %", num(v, decimals, 0)),
         "percentunit" => format!("{} %", num(v * 100.0, decimals, 0)),
-        "bytes" => scaled(v, 1024.0, &["B", "KiB", "MiB", "GiB", "TiB", "PiB"], decimals),
+        "bytes" => scaled(
+            v,
+            1024.0,
+            &["B", "KiB", "MiB", "GiB", "TiB", "PiB"],
+            decimals,
+        ),
         "decbytes" => scaled(v, 1000.0, &["B", "kB", "MB", "GB", "TB", "PB"], decimals),
-        "Bps" => format!("{}/s", scaled(v, 1024.0, &["B", "KiB", "MiB", "GiB", "TiB"], decimals)),
+        "Bps" => format!(
+            "{}/s",
+            scaled(v, 1024.0, &["B", "KiB", "MiB", "GiB", "TiB"], decimals)
+        ),
         "ms" => {
             if v.abs() >= 1000.0 {
                 format!("{} s", num(v / 1000.0, decimals, 1))
@@ -94,7 +106,10 @@ mod tests {
     use super::*;
 
     fn st(color: &str, value: Option<f64>) -> Step {
-        Step { color: color.into(), value }
+        Step {
+            color: color.into(),
+            value,
+        }
     }
 
     #[test]
@@ -117,7 +132,7 @@ mod tests {
         assert_eq!(format_value(0.25, Some("s"), None), "250 ms");
         assert_eq!(format_value(90.0, Some("s"), None), "1.5 min");
         assert_eq!(format_value(1500.0, Some("ms"), None), "1.5 s");
-        assert_eq!(format_value(3.14159, None, None), "3.14");
+        assert_eq!(format_value(3.14259, None, None), "3.14");
         assert_eq!(format_value(3.0, Some("none"), None), "3");
         assert_eq!(format_value(12500.0, Some("short"), None), "12.5 k");
         assert_eq!(format_value(2.0, Some("celsius"), Some(1)), "2.0 celsius");
@@ -132,14 +147,22 @@ mod tests {
 
     #[test]
     fn thresholds_pick_highest_reached_step() {
-        let steps = [st("green", None), st("orange", Some(0.7)), st("red", Some(0.9))];
+        let steps = [
+            st("green", None),
+            st("orange", Some(0.7)),
+            st("red", Some(0.9)),
+        ];
         assert_eq!(threshold_colour(0.1, &steps), "green");
         assert_eq!(threshold_colour(0.7, &steps), "orange");
         assert_eq!(threshold_colour(0.95, &steps), "red");
         assert_eq!(threshold_colour(-5.0, &steps), "green");
         assert_eq!(threshold_colour(1.0, &[]), "grey");
         // order in the file must not matter
-        let shuffled = [st("red", Some(0.9)), st("green", None), st("orange", Some(0.7))];
+        let shuffled = [
+            st("red", Some(0.9)),
+            st("green", None),
+            st("orange", Some(0.7)),
+        ];
         assert_eq!(threshold_colour(0.8, &shuffled), "orange");
     }
 }

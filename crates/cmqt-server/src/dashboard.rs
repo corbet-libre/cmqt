@@ -163,8 +163,10 @@ impl Board {
 
 /// Read only the generation of `dir/manifest.json`.
 pub fn read_generation(manifest: &Path) -> Result<String, String> {
-    let text = std::fs::read_to_string(manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
-    let m: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    let text =
+        std::fs::read_to_string(manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    let m: Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", manifest.display()))?;
     m.get("generation")
         .and_then(Value::as_str)
         .map(str::to_string)
@@ -190,9 +192,13 @@ pub fn load(dir: &Path) -> Result<Board, String> {
             "internal" => Tree::Internal,
             other => return Err(format!("screen {}: unknown door {other}", entry.name)),
         };
-        let rel = entry.file.clone().unwrap_or_else(|| format!("{}/{}.json", entry.door, entry.name));
+        let rel = entry
+            .file
+            .clone()
+            .unwrap_or_else(|| format!("{}/{}.json", entry.door, entry.name));
         let path = dir.join(&rel);
-        let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let raw: RawDashboard =
             serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
         if raw.corbet.generation != manifest.generation {
@@ -203,8 +209,12 @@ pub fn load(dir: &Path) -> Result<Board, String> {
                 manifest.generation
             ));
         }
-        if raw.corbet.door != entry.door || raw.corbet.screen != entry.name || raw.uid != entry.name {
-            return Err(format!("{}: door/screen/uid disagree with the manifest", path.display()));
+        if raw.corbet.door != entry.door || raw.corbet.screen != entry.name || raw.uid != entry.name
+        {
+            return Err(format!(
+                "{}: door/screen/uid disagree with the manifest",
+                path.display()
+            ));
         }
         let screen = convert(raw);
         match tree {
@@ -224,12 +234,22 @@ fn convert(raw: RawDashboard) -> Screen {
             topology = c.topology.clone();
         }
         let Some(id) = c.tile else { continue };
-        let g = p.grid_pos.unwrap_or(RawGrid { x: 0, y: 0, w: 24, h: 4 });
+        let g = p.grid_pos.unwrap_or(RawGrid {
+            x: 0,
+            y: 0,
+            w: 24,
+            h: 4,
+        });
         let d = p.field_config.map(|f| f.defaults).unwrap_or_default();
         tiles.push(TileDef {
             id,
             title: p.title,
-            grid: Grid { x: g.x, y: g.y, w: g.w, h: g.h },
+            grid: Grid {
+                x: g.x,
+                y: g.y,
+                w: g.w,
+                h: g.h,
+            },
             unit: d.unit,
             decimals: d.decimals,
             steps: d.thresholds.map(|t| t.steps).unwrap_or_default(),
@@ -245,5 +265,56 @@ fn convert(raw: RawDashboard) -> Screen {
         greyed: raw.corbet.greyed,
         tiles,
         topology,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixtures() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+    }
+
+    #[test]
+    fn loads_fixture_board() {
+        let b = load(&fixtures()).unwrap();
+        assert_eq!(b.public.screens.len(), 3);
+        assert_eq!(b.internal.screens.len(), 5);
+        let srv = b.internal.screens.iter().find(|s| s.name == "srv").unwrap();
+        assert_eq!(srv.tiles.len(), 3);
+        assert_eq!(srv.tiles[1].grid.x, 8);
+        let topo = b
+            .internal
+            .screens
+            .iter()
+            .find(|s| s.name == "topology")
+            .unwrap();
+        assert!(topo.topology.is_some() && topo.tiles.is_empty());
+        assert!(
+            b.internal
+                .screens
+                .iter()
+                .any(|s| s.name == "laptop" && s.greyed)
+        );
+    }
+
+    #[test]
+    fn rejects_mixed_generations() {
+        let d = std::env::temp_dir().join(format!("cmqt-gen-{}", std::process::id()));
+        for sub in ["internal", "public"] {
+            std::fs::create_dir_all(d.join(sub)).unwrap();
+        }
+        let dash = std::fs::read_to_string(fixtures().join("internal/srv.json")).unwrap();
+        std::fs::write(d.join("internal/srv.json"), dash).unwrap();
+        let man = r#"{"generation":"other","screens":[{"name":"srv","door":"internal","file":"internal/srv.json"}]}"#;
+        std::fs::write(d.join("manifest.json"), man).unwrap();
+        let e = load(&d).unwrap_err();
+        assert!(e.contains("differs from manifest"), "{e}");
+        std::fs::remove_file(d.join("internal/srv.json")).unwrap();
+        std::fs::remove_file(d.join("manifest.json")).unwrap();
+        std::fs::remove_dir(d.join("internal")).unwrap();
+        std::fs::remove_dir(d.join("public")).unwrap();
+        std::fs::remove_dir(&d).unwrap();
     }
 }

@@ -17,3 +17,7 @@ ureq = { version = "3", features = ["json"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+rumqttc = "0.25"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "sync"] }

@@ -1,0 +1,68 @@
+{
+ "uid": "topology",
+ "title": "Topology",
+ "tags": [
+  "corbet"
+ ],
+ "schemaVersion": 39,
+ "panels": [
+  {
+   "id": 99,
+   "type": "canvas",
+   "title": "Topology",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 12
+   },
+   "corbet": {
+    "topology": {
+     "nodes": [
+      {
+       "device": "srv",
+       "group": "home",
+       "row": 0,
+       "col": 0,
+       "planned": false,
+       "greyed": false
+      },
+      {
+       "device": "secret-host",
+       "group": "home",
+       "row": 0,
+       "col": 1,
+       "planned": false,
+       "greyed": false
+      }
+     ],
+     "edges": [
+      {
+       "from": "srv",
+       "to": "secret-host",
+       "kind": "link"
+      }
+     ],
+     "brackets": [
+      {
+       "name": "home",
+       "members": [
+        "srv",
+        "secret-host"
+       ]
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "links": [],
+ "corbet": {
+  "schema": "corbet.obs.dashboard/1",
+  "generation": "1111aaaa2222bbbb3333cccc4444dddd5555eeee6666ffff00001111aaaa2222",
+  "screen": "topology",
+  "door": "public",
+  "kind": "topology",
+  "greyed": false
+ }
+}

@@ -76,7 +76,9 @@ mod tests {
     #[test]
     fn rejects_bad_values() {
         assert!(Config::parse("dashboards_dir='/d'\nvictoria_url='x'\ninterval_s=0").is_err());
-        assert!(Config::parse("dashboards_dir='/d'\nvictoria_url='x'\nrefresh_intervals=3").is_err());
+        assert!(
+            Config::parse("dashboards_dir='/d'\nvictoria_url='x'\nrefresh_intervals=3").is_err()
+        );
         assert!(Config::parse("dashboards_dir='/d'\nvictoria_url='x'\nbogus=1").is_err());
     }
 }
