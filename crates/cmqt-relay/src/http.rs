@@ -234,6 +234,7 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
     let path_ok = rq.url().split('?').next().is_some_and(|p| p.ends_with("/v1/metrics"));
     if *rq.method() == tiny_http::Method::Get
         && let Some(dir) = STATIC_DIR.get()
+        && !rq.url().contains("/api/v1/")
         && !rq.url().starts_with("/sd/")
         && !rq.url().starts_with("/v1/")
     {
