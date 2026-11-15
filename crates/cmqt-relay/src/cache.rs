@@ -140,7 +140,9 @@ impl Cache {
             s.blocks.push_back(Block { first_ts: ts, n: 1, last_ts: ts, last_bits: bits, data: Vec::new(), first_bits: bits });
             self.bytes += 96;
         }
-        while self.bytes > self.cap && self.evict_one() {}
+        // While the CPU governor throttles, eviction (a scan over all series) is deferred up to 2% over the cap.
+        let lim = if crate::govern::throttled() { self.cap + self.cap / 50 } else { self.cap };
+        while self.bytes > lim && self.evict_one() {}
     }
     /// Drop the oldest block of the series whose oldest block is oldest.
     fn evict_one(&mut self) -> bool {

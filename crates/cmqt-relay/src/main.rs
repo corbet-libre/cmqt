@@ -2,6 +2,7 @@
 
 mod cache;
 mod flush;
+mod govern;
 mod http;
 mod watch;
 mod influx;

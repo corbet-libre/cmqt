@@ -190,23 +190,46 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     if let Some(d) = cfg.static_dir.clone() {
         let _ = STATIC_DIR.set(d);
     }
-    if cfg.cache_mib > 0 {
+    if cfg.screen_password_file.is_some() {
         let pw = std::fs::read_to_string(cfg.screen_password_file.as_deref().ok_or("screen_password_file missing")?).map_err(|e| e.to_string())?;
-        let _ = CACHE.set((Mutex::new(crate::cache::Cache::new(cfg.cache_mib << 20)), pw.trim().to_string()));
+        let _ = CACHE.set((Mutex::new(crate::cache::Cache::new((cfg.cache_floor_mib << 20).max(1 << 20))), pw.trim().to_string()));
     }
     let focus: crate::watch::SharedFocus = Default::default();
     if let Some(w) = cfg.watch.clone() {
         crate::watch::spawn(w, focus.clone())?;
     }
-    // Resident memory and its peak into the log every 5 minutes (the host's own tools do not see a site's process).
-    std::thread::spawn(|| loop {
-        if let Ok(st) = std::fs::read_to_string("/proc/self/status") {
-            let f = |k: &str| st.lines().find(|l| l.starts_with(k)).unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
-            let ch = CACHE.get().map(|(c, _)| { let g = c.lock().unwrap_or_else(|e| e.into_inner()); format!(" | cache {} B, {} series, oldest {:?} ms, evicted {}", g.bytes(), g.series_count(), g.oldest_ms(), g.evicted_blocks) }).unwrap_or_default();
-            eprintln!("cmqt flush: mem {} | {}{ch}", f("VmRSS:"), f("VmHWM:"));
-        }
-        std::thread::sleep(Duration::from_secs(300));
-    });
+    // Governors (D76), once a second: CPU share over a 30 s window paces ingest; the history cache
+    // gets the RAM that is left below the total target. Every 5 minutes both go into the log
+    // together with this process's resident memory and its peak.
+    {
+        let (cpu_t, ram_t, floor, ceil) = (cfg.cpu_target, cfg.ram_target_mib << 20, cfg.cache_floor_mib << 20, cfg.cache_mib << 20);
+        std::thread::spawn(move || {
+            let t0 = std::time::Instant::now();
+            let mut win = crate::govern::CpuWindow::new(30.0);
+            let (mut n, mut rss_peak) = (0u64, 0usize);
+            loop {
+                let (cpu, rss) = crate::govern::sample();
+                rss_peak = rss_peak.max(rss);
+                win.push(t0.elapsed().as_secs_f64(), cpu);
+                let share = win.share();
+                let d = crate::govern::next_delay_ms(crate::govern::DELAY_MS.load(std::sync::atomic::Ordering::Relaxed), share, cpu_t);
+                crate::govern::DELAY_MS.store(d, std::sync::atomic::Ordering::Relaxed);
+                let mut ch = String::new();
+                if let Some((c, _)) = CACHE.get() {
+                    let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
+                    g.cap = crate::govern::cache_cap(rss, g.bytes(), ram_t, floor, ceil);
+                    ch = format!(" | cache {} B (cap {}), {} series, oldest {:?} ms, evicted {}", g.bytes(), g.cap, g.series_count(), g.oldest_ms(), g.evicted_blocks);
+                }
+                if n % 300 == 0 {
+                    let own = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+                    let f = |k: &str| own.lines().find(|l| l.starts_with(k)).unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
+                    eprintln!("cmqt flush: cpu {share:.3} of {cpu_t} (delay {d} ms) | total rss {} B of {ram_t}, peak {rss_peak} | self {} | {}{ch}", rss, f("VmRSS:"), f("VmHWM:"));
+                }
+                n += 1;
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        });
+    }
     let server = tiny_http::Server::http(&listen).map_err(|e| format!("http listen {listen}: {e}"))?;
     eprintln!("cmqt flush: OTLP/HTTP on {listen}");
     let server = Arc::new(server);
@@ -299,6 +322,10 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
     } else if *rq.method() != tiny_http::Method::Post || !path_ok {
         404
     } else {
+        let pace = crate::govern::delay();
+        if !pace.is_zero() {
+            std::thread::sleep(pace);
+        }
         let mut body = Vec::new();
         let r = if gz {
             flate2::read::GzDecoder::new(rq.as_reader()).take(MAX_BODY + 1).read_to_end(&mut body)

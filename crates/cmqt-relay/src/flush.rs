@@ -9,6 +9,16 @@ use serde::Deserialize;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 
+fn default_ram_target() -> usize {
+    240
+}
+fn default_cache_floor() -> usize {
+    16
+}
+fn default_cpu_target() -> f64 {
+    0.23
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -34,8 +44,20 @@ pub struct Config {
     pub static_dir: Option<String>,
     /// History cache cap in MiB (0 = off) and the file holding the `screen` password that guards
     /// `/hist/api/v1/query_range` (HTTP Basic, user `screen`).
+    /// Optional hard ceiling for the history cache in MiB (0 = none). The cache is on whenever
+    /// `screen_password_file` is set; its size follows `ram_target_mib` (see `govern`).
     #[serde(default)]
     pub cache_mib: usize,
+    /// Target for the TOTAL resident memory of the relay processes (flush and Mosquitto); the cache
+    /// grows into what is left and evicts the oldest blocks before reaching it.
+    #[serde(default = "default_ram_target")]
+    pub ram_target_mib: usize,
+    /// Smallest cache the governor keeps, in MiB.
+    #[serde(default = "default_cache_floor")]
+    pub cache_floor_mib: usize,
+    /// CPU target as a share of one core, flush plus Mosquitto; above it ingest is paced.
+    #[serde(default = "default_cpu_target")]
+    pub cpu_target: f64,
     pub screen_password_file: Option<String>,
     pub key_file: String,
     /// Box address, e.g. `[2001:db8::1]:9514`.
