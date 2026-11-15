@@ -105,7 +105,7 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
     std::thread::spawn(move || {
         loop {
             let mut o = MqttOptions::new(format!("cmqt-watch-{}", std::process::id()), &c2.mqtt_url, 443);
-            o.set_keep_alive(Duration::from_secs(120));
+            o.set_keep_alive(Duration::from_secs(30));
             o.set_credentials(&c2.user, &pw);
             o.set_transport(Transport::wss_with_default_config());
             let (client, mut conn) = Client::new(o, 64);
