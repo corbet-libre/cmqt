@@ -1,11 +1,11 @@
-# Relay datagram format, version 1
+# Relay datagram format, versions 1 and 2
 
 `cmqt flush` (on the relay) sends, `cmqt unseal` (on the box) receives. The
 path is one-way UDP; the box never answers. Everything below is big endian.
 
 ```text
 offset  size  field
-0       1     version, 1
+0       1     version, 1 (plaintext line protocol) or 2 (plaintext is one zstd frame of line protocol)
 1       4     sender prefix: random per process start
 5       8     sequence number: 0, 1, 2 ... per prefix, one per datagram
 13      n+16  ChaCha20-Poly1305 ciphertext followed by the 16-byte tag
@@ -17,6 +17,7 @@ offset  size  field
 | Nonce | 12 bytes: prefix (4) followed by sequence (8), taken from the header. A new prefix on every start keeps nonces unique across restarts (collision odds 2^-32 per restart pair); the counter keeps them unique within a run. |
 | AAD | The 13 header bytes, so version, prefix and sequence are authenticated. |
 | Plaintext | InfluxDB line protocol, newline-terminated lines, at most 1100 bytes. A line never splits across datagrams. A datagram is at most 1129 bytes, under the IPv6 minimum MTU of 1280. |
+| Version 2 | The sealed plaintext is ONE complete zstd frame (level 3) of newline-terminated line protocol, filled with as many lines as keep the COMPRESSED size at or below 1100 bytes. Every datagram is compressed on its own: none depends on another, so a lost datagram loses only its own lines. The receiver decompresses with a limit of 256 KiB; a bad or larger frame counts as `malformed`. The sender (HTTP mode of `cmqt flush`) seals version 2; the legacy RabbitMQ consumer mode still seals version 1. A receiver accepts both. |
 | Version | A receiver rejects any version it does not know (`malformed`). A format change bumps the byte. |
 
 ## Receiver accounting

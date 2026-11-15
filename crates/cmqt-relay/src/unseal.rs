@@ -85,7 +85,7 @@ pub fn run(cfg: Config) -> Result<(), String> {
 pub fn accept(aead: &chacha20poly1305::ChaCha20Poly1305, replay: &mut Replay, c: &Counters, d: &[u8], tx: &SyncSender<Vec<u8>>) {
     match wire::open(aead, d) {
         Err(OpenError::Auth) => c.add("cmqt_unseal_auth_failures_total", 1),
-        Err(_) => c.add("cmqt_unseal_malformed_total", 1),
+        Err(_) => c.add("cmqt_unseal_malformed_total", 1), // short, unknown version, or a bad zstd frame
         Ok(o) => match replay.check(o.prefix, o.seq) {
             Verdict::Replay => c.add("cmqt_unseal_replays_total", 1),
             v => {
@@ -165,5 +165,21 @@ mod tests {
         assert_eq!(c.get("cmqt_unseal_auth_failures_total"), 1);
         assert_eq!(c.get("cmqt_unseal_malformed_total"), 1);
         assert_eq!(rx.try_iter().count(), 4);
+    }
+
+    #[test]
+    fn zstd_datagram_is_decompressed_and_a_bomb_is_refused() {
+        let aead = || ChaCha20Poly1305::new_from_slice(&[3u8; 32]).unwrap();
+        let mut s = Sealer::with_prefix(aead(), 1);
+        let c = Counters::new(COUNTERS);
+        let (tx, rx) = sync_channel(8);
+        let mut r = Replay::default();
+        let line = b"m value=1 1\n".repeat(40);
+        accept(&aead(), &mut r, &c, &s.seal_zstd(&zstd::bulk::compress(&line, 3).unwrap()), &tx);
+        assert_eq!(rx.try_recv().unwrap(), line);
+        let bomb = zstd::bulk::compress(&vec![b'a'; 1 << 20], 3).unwrap();
+        accept(&aead(), &mut r, &c, &s.seal_zstd(&bomb), &tx);
+        assert_eq!(c.get("cmqt_unseal_malformed_total"), 1);
+        assert!(rx.try_recv().is_err());
     }
 }

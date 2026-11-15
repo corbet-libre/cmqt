@@ -15,7 +15,12 @@ use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
 use std::collections::VecDeque;
 use std::os::unix::fs::PermissionsExt;
 
+/// Version 1: the plaintext is line protocol. Version 2: the plaintext is one zstd frame of line
+/// protocol (every datagram compressed on its own, none depends on another).
 pub const VERSION: u8 = 1;
+pub const VERSION_ZSTD: u8 = 2;
+/// Largest decompressed payload `open` accepts (a datagram is below 1.3 KB; this bounds a bomb).
+pub const MAX_DECOMPRESSED: usize = 256 * 1024;
 pub const HEADER: usize = 13;
 pub const TAG: usize = 16;
 /// Largest plaintext the flusher packs (well below the IPv6 minimum MTU of 1280).
@@ -61,8 +66,15 @@ impl Sealer {
         Sealer { aead, prefix, seq: 0 }
     }
     pub fn seal(&mut self, payload: &[u8]) -> Vec<u8> {
+        self.seal_version(VERSION, payload)
+    }
+    /// Seal an already compressed payload as version 2.
+    pub fn seal_zstd(&mut self, compressed: &[u8]) -> Vec<u8> {
+        self.seal_version(VERSION_ZSTD, compressed)
+    }
+    fn seal_version(&mut self, version: u8, payload: &[u8]) -> Vec<u8> {
         let mut hdr = [0u8; HEADER];
-        hdr[0] = VERSION;
+        hdr[0] = version;
         hdr[1..5].copy_from_slice(&self.prefix.to_be_bytes());
         hdr[5..13].copy_from_slice(&self.seq.to_be_bytes());
         self.seq += 1;
@@ -88,6 +100,8 @@ pub enum OpenError {
     Short,
     Version(u8),
     Auth,
+    /// Authenticated, but the zstd frame is bad or too large.
+    Decompress,
 }
 
 pub struct Opened {
@@ -100,12 +114,15 @@ pub fn open(aead: &ChaCha20Poly1305, d: &[u8]) -> Result<Opened, OpenError> {
     if d.len() < HEADER + TAG {
         return Err(OpenError::Short);
     }
-    if d[0] != VERSION {
+    if d[0] != VERSION && d[0] != VERSION_ZSTD {
         return Err(OpenError::Version(d[0]));
     }
-    let payload = aead
+    let mut payload = aead
         .decrypt(&nonce(&d[..HEADER]), Payload { msg: &d[HEADER..], aad: &d[..HEADER] })
         .map_err(|_| OpenError::Auth)?;
+    if d[0] == VERSION_ZSTD {
+        payload = zstd::bulk::decompress(&payload, MAX_DECOMPRESSED).map_err(|_| OpenError::Decompress)?;
+    }
     Ok(Opened {
         prefix: u32::from_be_bytes(d[1..5].try_into().unwrap()),
         seq: u64::from_be_bytes(d[5..13].try_into().unwrap()),
@@ -224,8 +241,8 @@ mod tests {
         let other = ChaCha20Poly1305::new_from_slice(&[8u8; 32]).unwrap();
         assert_eq!(open(&other, &d).err(), Some(OpenError::Auth));
         let mut v = d.clone();
-        v[0] = 2;
-        assert_eq!(open(&aead(), &v).err(), Some(OpenError::Version(2)));
+        v[0] = 3;
+        assert_eq!(open(&aead(), &v).err(), Some(OpenError::Version(3)));
         assert_eq!(open(&aead(), &d[..20]).err(), Some(OpenError::Short));
     }
 

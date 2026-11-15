@@ -2,6 +2,7 @@
 
 mod flush;
 mod http;
+mod watch;
 mod influx;
 mod metrics;
 mod otlp;
@@ -16,7 +17,10 @@ fn load<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let r = match (a.get(1).map(String::as_str), a.get(2)) {
-        (Some("flush"), Some(p)) => load(p).and_then(|c| {
+        (Some("flush"), Some(p)) => load::<flush::Config>(p).and_then(|mut c| {
+            if flush::resolve_http(&mut c)? {
+                return http::run(c);
+            }
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()

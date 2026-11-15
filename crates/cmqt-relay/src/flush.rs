@@ -23,6 +23,12 @@ pub struct Config {
     pub http_listen: Option<String>,
     /// File with one bearer token per line (`name:token` or `token`); needed for HTTP.
     pub tokens_file: Option<String>,
+    /// HTTP mode with `amqp_url`: devices' requests are packed, compressed and sealed at once and
+    /// published as ready datagrams into this durable queue; the drain task paces them to the box.
+    /// Declared (idempotently) by this tool. Default `relay_datagrams`.
+    pub datagram_queue: Option<String>,
+    /// Box-silence watcher (HTTP mode): MQTT over WebSocket plus ntfy.
+    pub watch: Option<crate::watch::Config>,
     pub key_file: String,
     /// Box address, e.g. `[2001:db8::1]:9514`.
     pub target: String,
@@ -50,30 +56,32 @@ pub const COUNTERS: &[(&str, &str)] = &[
     ("cmqt_flush_bytes_total", "Bytes of sealed datagrams sent."),
     ("cmqt_flush_send_errors_total", "UDP send failures (the message is requeued)."),
     ("cmqt_flush_amqp_errors_total", "AMQP session failures (reconnect after a pause)."),
+    ("cmqt_flush_queue_errors_total", "Publishes into the datagram queue that failed (the request got a 503)."),
     ("cmqt_flush_http_unauthorized_total", "OTLP/HTTP requests without a valid bearer token."),
     ("cmqt_flush_http_bytes_in_total", "OTLP/HTTP request body bytes after decompression."),
 ];
 
-pub async fn run(mut cfg: Config) -> Result<(), String> {
+/// HTTP mode is selected by `tokens_file`. `http_listen` defaults to the platform's IP and PORT.
+/// `Ok(true)` means run `http::run`; `Ok(false)` the RabbitMQ consumer of `run`.
+pub fn resolve_http(cfg: &mut Config) -> Result<bool, String> {
+    if cfg.tokens_file.is_none() {
+        return Ok(false);
+    }
+    if cfg.http_listen.is_none() {
+        let (Ok(ip), Ok(port)) = (std::env::var("IP"), std::env::var("PORT")) else {
+            return Err("http mode needs http_listen or the platform variables IP and PORT".into());
+        };
+        cfg.http_listen = Some(if ip.contains(':') { format!("[{ip}]:{port}") } else { format!("{ip}:{port}") });
+    }
     if let Ok(u) = std::env::var("CMQT_AMQP_URL") {
         cfg.amqp_url = Some(u);
     }
-    if cfg.http_listen.is_none()
-        && cfg.amqp_url.is_none()
-        && let (Ok(ip), Ok(port)) = (std::env::var("IP"), std::env::var("PORT"))
-    {
-        cfg.http_listen = Some(if ip.contains(':') { format!("[{ip}]:{port}") } else { format!("{ip}:{port}") });
-    }
-    if let Some(listen) = cfg.http_listen.clone() {
-        let tokens = crate::http::load_tokens(cfg.tokens_file.as_deref().ok_or("tokens_file missing")?)?;
-        let counters = Counters::new(COUNTERS);
-        if let Some(m) = &cfg.metrics_listen {
-            metrics::serve(m, counters.clone())?;
-        }
-        let sock = std::net::UdpSocket::bind(if cfg.target.starts_with('[') { "[::]:0" } else { "0.0.0.0:0" }).map_err(|e| e.to_string())?;
-        sock.connect(&cfg.target).map_err(|e| format!("target {}: {e}", cfg.target))?;
-        let out = crate::http::Out { sock, sealer: Sealer::new(wire::load_key(&cfg.key_file)?), bucket: Bucket::new(cfg.rate_pps, cfg.burst) };
-        return crate::http::serve(&listen, tokens, out, counters);
+    Ok(true)
+}
+
+pub async fn run(mut cfg: Config) -> Result<(), String> {
+    if let Ok(u) = std::env::var("CMQT_AMQP_URL") {
+        cfg.amqp_url = Some(u);
     }
     let url = cfg.amqp_url.clone().ok_or("amqp_url missing (config or CMQT_AMQP_URL)")?;
     let mut sealer = Sealer::new(wire::load_key(&cfg.key_file)?);
@@ -148,6 +156,20 @@ async fn session(cfg: &Config, url: &str, sock: &UdpSocket, sealer: &mut Sealer,
         }
     }
     Err("consumer stream ended".into())
+}
+
+/// One request body to compressed datagram payloads (each an independent zstd frame, at most
+/// `MAX_PAYLOAD` bytes compressed).
+pub fn prepare_zstd(body: &[u8], c: &Counters) -> Result<Vec<Vec<u8>>, String> {
+    let req = otlp::decode(body)?;
+    let mut lines = Vec::new();
+    let t = influx::convert(&req, &mut lines);
+    let (packed, oversize) = influx::pack_zstd(&lines, MAX_PAYLOAD);
+    c.add("cmqt_flush_points_total", t.points);
+    c.add("cmqt_flush_skipped_points_total", t.skipped);
+    c.add("cmqt_flush_exp_histogram_buckets_dropped_total", t.exp_buckets_dropped);
+    c.add("cmqt_flush_oversize_lines_total", oversize);
+    Ok(packed)
 }
 
 /// One queue message to datagram payloads (plaintext line protocol).

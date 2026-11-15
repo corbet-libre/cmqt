@@ -287,3 +287,84 @@ mod tests {
         assert_eq!(o, 1);
     }
 }
+
+/// Pack lines into datagram payloads, each ONE independent zstd frame whose compressed size is
+/// at most `target` bytes (as many lines as fit; no datagram depends on another). Returns the
+/// compressed payloads and the number of lines that do not fit alone.
+pub fn pack_zstd(lines: &[String], target: usize) -> (Vec<Vec<u8>>, u64) {
+    const RAW_CAP: usize = 64 * 1024;
+    let mut out = Vec::new();
+    let mut oversize = 0;
+    let mut i = 0;
+    let mut guess = 16usize;
+    let compress = |a: usize, k: usize| -> Vec<u8> {
+        let mut raw = Vec::new();
+        for l in &lines[a..a + k] {
+            raw.extend_from_slice(l.as_bytes());
+            raw.push(b'\n');
+        }
+        zstd::bulk::compress(&raw, 3).unwrap_or_default()
+    };
+    let raw_len = |a: usize, k: usize| lines[a..a + k].iter().map(|l| l.len() + 1).sum::<usize>();
+    while i < lines.len() {
+        let remaining = lines.len() - i;
+        // Largest k <= remaining with raw <= RAW_CAP and compressed <= target: gallop, then bisect.
+        let fits = |k: usize| raw_len(i, k) <= RAW_CAP && compress(i, k).len() <= target;
+        if !fits(1) {
+            oversize += 1;
+            i += 1;
+            continue;
+        }
+        let mut lo = 1usize; // fits
+        let mut hi;
+        let mut k = guess.clamp(1, remaining);
+        if fits(k) {
+            lo = k;
+            loop {
+                if lo == remaining {
+                    hi = remaining + 1;
+                    break;
+                }
+                k = (lo + lo / 2 + 1).min(remaining);
+                if fits(k) {
+                    lo = k;
+                } else {
+                    hi = k;
+                    break;
+                }
+            }
+        } else {
+            hi = k;
+        }
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            if fits(mid) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        out.push(compress(i, lo));
+        i += lo;
+        guess = lo;
+    }
+    (out, oversize)
+}
+
+#[cfg(test)]
+mod zstd_tests {
+    use super::*;
+    #[test]
+    fn frames_are_independent_and_within_target() {
+        let lines: Vec<String> = (0..2000).map(|i| format!("node_cpu_seconds_total,instance=host{},job=job{} value={}.5 17947400000000000", i % 40, i % 7, i)).collect();
+        let (v, o) = pack_zstd(&lines, 1100);
+        assert_eq!(o, 0);
+        assert!(v.iter().all(|f| f.len() <= 1100));
+        let mut back = Vec::new();
+        for f in &v {
+            back.extend_from_slice(&zstd::bulk::decompress(f, 1 << 20).unwrap());
+        }
+        assert_eq!(String::from_utf8(back).unwrap(), lines.iter().map(|l| format!("{l}\n")).collect::<String>());
+        assert!(v.len() < 100, "{} datagrams", v.len());
+    }
+}
