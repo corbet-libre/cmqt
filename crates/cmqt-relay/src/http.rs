@@ -60,6 +60,14 @@ pub fn sd_path(url: &str) -> Option<(&str, &str)> {
     (it.next().is_none() && !d.is_empty() && !s.is_empty() && d != "metrics").then_some((d, s))
 }
 
+/// `/v1/<device>` or `/sd/v1/<device>`: the device-level discovery (all subsystems in one answer).
+pub fn sd_device_path(url: &str) -> Option<&str> {
+    let p = url.split('?').next()?;
+    let p = p.strip_prefix("/sd").unwrap_or(p);
+    let d = p.strip_prefix("/v1/")?;
+    (!d.is_empty() && !d.contains('/') && d != "metrics").then_some(d)
+}
+
 /// Where sealed datagrams go.
 enum Sink {
     Direct { sock: std::net::UdpSocket, bucket: Bucket },
@@ -298,16 +306,18 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
         return;
     }
     let who = authorized(auth.as_deref(), tokens);
+    let sd = sd_path(rq.url()).map(|(d, s)| (d.to_string(), Some(s.to_string()))).or_else(|| sd_device_path(rq.url()).map(|d| (d.to_string(), None)));
     if who.is_some()
         && *rq.method() == tiny_http::Method::Get
-        && let Some((device, sub)) = sd_path(rq.url())
+        && let Some((device, sub)) = sd
     {
-        let (device, sub) = (device.to_string(), sub.to_string());
         let (code, body) = if who != Some(device.as_str()) {
             (403, String::new())
-        } else if !crate::watch::SUBSYSTEMS.contains(&sub.as_str()) {
+        } else if sub.is_none() {
+            (200, crate::watch::sd_device_body(&focus.lock().unwrap_or_else(|e| e.into_inner()), std::time::Instant::now(), &device))
+        } else if !sub.as_deref().is_some_and(|s| crate::watch::SUBSYSTEMS.contains(&s)) {
             (404, String::new())
-        } else if focus.lock().unwrap_or_else(|e| e.into_inner()).in_focus(std::time::Instant::now(), &device, &sub) {
+        } else if focus.lock().unwrap_or_else(|e| e.into_inner()).in_focus(std::time::Instant::now(), &device, sub.as_deref().unwrap_or_default()) {
             (200, r#"[{"targets":["focus"],"labels":{}}]"#.to_string())
         } else {
             (200, "[]".to_string())
@@ -544,5 +554,9 @@ mod tests {
         assert_eq!(sd_path("/sd/v1/office.mac.vm.srv/disk-io?x=1"), Some(("office.mac.vm.srv", "disk-io")));
         assert_eq!(sd_path("/v1/metrics"), None);
         assert_eq!(sd_path("/v1/a/b/c"), None);
+        assert_eq!(sd_device_path("/sd/v1/srv?x=1"), Some("srv"));
+        assert_eq!(sd_device_path("/v1/srv"), Some("srv"));
+        assert_eq!(sd_device_path("/v1/metrics"), None);
+        assert_eq!(sd_device_path("/v1/srv/cpu"), None);
     }
 }

@@ -29,6 +29,27 @@ fn default_silence() -> u64 {
 
 /// Subsystems the foveal collection knows (the `subsystem` label of the attention rules).
 pub const SUBSYSTEMS: &[&str] = &["cpu", "memory", "disk-io", "disk-space", "network"];
+/// node_exporter collectors per subsystem: the device-level discovery answer lists one target per
+/// collector, because a Prometheus scrape takes one `collect[]` value per relabelled target. Must equal
+/// `collectors` in infra lib/foveal-collection.nix.
+pub const COLLECTORS: &[(&str, &[&str])] = &[
+    ("cpu", &["cpu", "loadavg"]),
+    ("memory", &["meminfo", "vmstat"]),
+    ("disk-io", &["diskstats", "pressure"]),
+    ("disk-space", &["filesystem"]),
+    ("network", &["netdev", "netstat"]),
+];
+
+/// The device-level discovery body: one target group per collector of every subsystem in focus,
+/// labelled `subsystem` and `collector` (the collector's relabelling reads and drops both).
+pub fn sd_device_body(focus: &Focus, now: Instant, device: &str) -> String {
+    let groups: Vec<serde_json::Value> = COLLECTORS
+        .iter()
+        .filter(|(s, _)| focus.in_focus(now, device, s))
+        .flat_map(|(s, cols)| cols.iter().map(move |c| serde_json::json!({"targets": ["focus"], "labels": {"subsystem": s, "collector": c}})))
+        .collect();
+    serde_json::Value::Array(groups).to_string()
+}
 const HOLD: Duration = Duration::from_secs(60);
 /// The box publishes `internal/_focus` only when the set changes, and `_online` every 120 s: any
 /// live message from the box is the heartbeat. With none for this long nothing is in focus.
@@ -204,6 +225,19 @@ mod tests {
         f.report(t0 + s(200), vec![("srv".into(), "cpu".into())]);
         assert!(!f.in_focus(t0 + s(501), "srv", "cpu")); // no _online for 300 s
         assert_eq!(parse_focus(br#"{"t":1,"firing":[["srv","cpu"],["a","b"]]}"#).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn device_discovery_lists_one_target_per_collector_of_each_focused_subsystem() {
+        let t0 = Instant::now();
+        let mut f = Focus::default();
+        assert_eq!(sd_device_body(&f, t0, "srv"), "[]");
+        f.report(t0, vec![("srv".into(), "cpu".into()), ("srv".into(), "disk-space".into()), ("other".into(), "network".into())]);
+        let v: serde_json::Value = serde_json::from_str(&sd_device_body(&f, t0, "srv")).unwrap();
+        let got: Vec<(String, String)> = v.as_array().unwrap().iter().map(|g| (g["labels"]["subsystem"].as_str().unwrap().into(), g["labels"]["collector"].as_str().unwrap().into())).collect();
+        assert_eq!(got, vec![("cpu".into(), "cpu".into()), ("cpu".into(), "loadavg".into()), ("disk-space".into(), "filesystem".into())]);
+        assert_eq!(sd_device_body(&f, t0, "nobody"), "[]");
+        assert!(SUBSYSTEMS.iter().all(|s| COLLECTORS.iter().any(|(c, _)| c == s)));
     }
 
     #[test]
