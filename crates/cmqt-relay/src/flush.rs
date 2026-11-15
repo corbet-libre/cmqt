@@ -15,6 +15,9 @@ fn default_ram_target() -> usize {
 fn default_cache_floor() -> usize {
     16
 }
+fn default_format() -> u8 {
+    2
+}
 fn default_cpu_target() -> f64 {
     0.23
 }
@@ -39,9 +42,6 @@ pub struct Config {
     pub datagram_queue: Option<String>,
     /// Box-silence watcher (HTTP mode): MQTT over WebSocket plus ntfy.
     pub watch: Option<crate::watch::Config>,
-    /// Directory with the status page (`index.html`, `app.js`, `style.css`): served on GET for any
-    /// path that is not `/otlp`, `/sd`, `/mqtt`; unknown paths answer `index.html` (client-side routes).
-    pub static_dir: Option<String>,
     /// History cache cap in MiB (0 = off) and the file holding the `screen` password that guards
     /// `/hist/api/v1/query_range` (HTTP Basic, user `screen`).
     /// Optional hard ceiling for the history cache in MiB (0 = none). The cache is on whenever
@@ -58,6 +58,13 @@ pub struct Config {
     /// CPU target as a share of one core, flush plus Mosquitto; above it ingest is paced.
     #[serde(default = "default_cpu_target")]
     pub cpu_target: f64,
+    /// Append the converted line protocol of ingested requests to this file until it holds 8 MiB
+    /// (recorded real traffic for training the zstd dictionary, see docs/relay-datagram.md). Off when unset.
+    pub record_lines: Option<String>,
+    /// Datagram format sent to the box: 2 (zstd frames) or 3 (frames with the trained dictionary).
+    /// Switch to 3 only after the box's `cmqt unseal` understands it.
+    #[serde(default = "default_format")]
+    pub datagram_format: u8,
     pub screen_password_file: Option<String>,
     pub key_file: String,
     /// Box address, e.g. `[2001:db8::1]:9514`.
@@ -189,12 +196,36 @@ async fn session(cfg: &Config, url: &str, sock: &UdpSocket, sealer: &mut Sealer,
     Err("consumer stream ended".into())
 }
 
+static RECORD: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+const RECORD_MAX: u64 = 8 << 20;
+
+pub fn set_record(path: &str) {
+    let _ = RECORD.set(path.into());
+}
+
+fn record(lines: &[String]) {
+    use std::io::Write;
+    let Some(p) = RECORD.get() else { return };
+    if std::fs::metadata(p).is_ok_and(|m| m.len() >= RECORD_MAX) {
+        return;
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(p) {
+        let mut buf = String::new();
+        for l in lines {
+            buf.push_str(l);
+            buf.push('\n');
+        }
+        let _ = f.write_all(buf.as_bytes());
+    }
+}
+
 /// One request body to compressed datagram payloads (each an independent zstd frame, at most
 /// `MAX_PAYLOAD` bytes compressed).
 pub fn prepare_zstd(body: &[u8], c: &Counters) -> Result<Vec<Vec<u8>>, String> {
     let req = otlp::decode(body)?;
     let mut lines = Vec::new();
     let t = influx::convert(&req, &mut lines);
+    record(&lines);
     let (packed, oversize) = influx::pack_zstd(&lines, MAX_PAYLOAD);
     c.add("cmqt_flush_points_total", t.points);
     c.add("cmqt_flush_skipped_points_total", t.skipped);

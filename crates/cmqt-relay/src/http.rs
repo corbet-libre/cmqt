@@ -19,7 +19,6 @@ use tokio::runtime::{Handle, Runtime};
 /// Largest body after decompression (an OTLP batch is far below this).
 const MAX_BODY: u64 = 8 * 1024 * 1024;
 static CACHE: std::sync::OnceLock<(std::sync::Mutex<crate::cache::Cache>, String)> = std::sync::OnceLock::new();
-static STATIC_DIR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 const DEFAULT_QUEUE: &str = "relay_datagrams";
 
 /// Token file: one `name:token` or bare `token` per line; `#` comments.
@@ -187,8 +186,9 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
         sock.connect(&cfg.target).map_err(|e| format!("target {}: {e}", cfg.target))?;
         Sink::Direct { sock, bucket: Bucket::new(cfg.rate_pps, cfg.burst) }
     };
-    if let Some(d) = cfg.static_dir.clone() {
-        let _ = STATIC_DIR.set(d);
+    wire::set_format(cfg.datagram_format)?;
+    if let Some(r) = &cfg.record_lines {
+        crate::flush::set_record(r);
     }
     if cfg.screen_password_file.is_some() {
         let pw = std::fs::read_to_string(cfg.screen_password_file.as_deref().ok_or("screen_password_file missing")?).map_err(|e| e.to_string())?;
@@ -255,29 +255,6 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
     let auth = hdr("Authorization");
     let gz = hdr("Content-Encoding").is_some_and(|e| e.eq_ignore_ascii_case("gzip"));
     let path_ok = rq.url().split('?').next().is_some_and(|p| p.ends_with("/v1/metrics"));
-    if *rq.method() == tiny_http::Method::Get
-        && let Some(dir) = STATIC_DIR.get()
-        && !rq.url().contains("/api/v1/")
-        && !rq.url().starts_with("/sd/")
-        && !rq.url().starts_with("/v1/")
-    {
-        let path = rq.url().split('?').next().unwrap_or("/").trim_start_matches('/');
-        let (name, ctype) = match path {
-            "app.js" => ("app.js", "text/javascript"),
-            "style.css" => ("style.css", "text/css"),
-            _ => ("index.html", "text/html; charset=utf-8"),
-        };
-        let r = match std::fs::read(std::path::Path::new(dir).join(name)) {
-            Ok(b) => tiny_http::Response::from_data(b).with_status_code(200),
-            Err(_) => tiny_http::Response::from_data(Vec::new()).with_status_code(404),
-        };
-        let r = match tiny_http::Header::from_bytes("Content-Type", ctype) {
-            Ok(h) => r.with_header(h),
-            Err(_) => r,
-        };
-        let _ = rq.respond(r);
-        return;
-    }
     if *rq.method() == tiny_http::Method::Get
         && rq.url().contains("/api/v1/messages")
         && let Some((cache, pw)) = CACHE.get()

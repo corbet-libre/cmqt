@@ -305,7 +305,7 @@ pub fn pack_zstd(lines: &[String], target: usize) -> (Vec<Vec<u8>>, u64) {
             raw.extend_from_slice(l.as_bytes());
             raw.push(b'\n');
         }
-        zstd::bulk::compress(&raw, 3).unwrap_or_default()
+        crate::wire::compress(&raw)
     };
     let raw_len = |a: usize, k: usize| lines[a..a + k].iter().map(|l| l.len() + 1).sum::<usize>();
     while i < lines.len() {
@@ -373,9 +373,31 @@ mod zstd_tests {
         assert!(v.iter().all(|f| f.len() <= 1100));
         let mut back = Vec::new();
         for f in &v {
-            back.extend_from_slice(&zstd::bulk::decompress(f, 1 << 20).unwrap());
+            back.extend_from_slice(&crate::wire::decompress(f, 1 << 20).unwrap());
         }
         assert_eq!(String::from_utf8(back).unwrap(), lines.iter().map(|l| format!("{l}\n")).collect::<String>());
         assert!(v.len() < 100, "{} datagrams", v.len());
+    }
+}
+
+#[cfg(test)]
+mod bench {
+    /// `CMQT_BENCH_LINES=<recorded lines> cargo test --release bench_pack -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_pack() {
+        let Ok(p) = std::env::var("CMQT_BENCH_LINES") else { return };
+        let all: Vec<String> = std::fs::read_to_string(p).unwrap().lines().map(str::to_string).collect();
+        crate::wire::set_format(std::env::var("CMQT_BENCH_FORMAT").ok().and_then(|v| v.parse().ok()).unwrap_or(2)).unwrap();
+        let reqs: Vec<&[String]> = all.chunks(400).collect();
+        let t = std::time::Instant::now();
+        let (mut dg, mut bytes) = (0usize, 0usize);
+        for r in &reqs {
+            let (v, _) = super::pack_zstd(r, crate::wire::MAX_PAYLOAD);
+            dg += v.len();
+            bytes += v.iter().map(Vec::len).sum::<usize>();
+        }
+        let e = t.elapsed();
+        eprintln!("{} lines, {} requests, {} datagrams, {} bytes, {:?} total, {:?} per request", all.len(), reqs.len(), dg, bytes, e, e / reqs.len() as u32);
     }
 }

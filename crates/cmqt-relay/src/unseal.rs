@@ -175,9 +175,9 @@ mod tests {
         let (tx, rx) = sync_channel(8);
         let mut r = Replay::default();
         let line = b"m value=1 1\n".repeat(40);
-        accept(&aead(), &mut r, &c, &s.seal_zstd(&zstd::bulk::compress(&line, 3).unwrap()), &tx);
+        accept(&aead(), &mut r, &c, &s.seal_zstd(&wire::compress(&line)), &tx);
         assert_eq!(rx.try_recv().unwrap(), line);
-        let bomb = zstd::bulk::compress(&vec![b'a'; 1 << 20], 3).unwrap();
+        let bomb = wire::compress(&vec![b'a'; 1 << 20]);
         accept(&aead(), &mut r, &c, &s.seal_zstd(&bomb), &tx);
         assert_eq!(c.get("cmqt_unseal_malformed_total"), 1);
         assert!(rx.try_recv().is_err());

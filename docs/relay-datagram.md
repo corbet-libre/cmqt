@@ -1,11 +1,11 @@
-# Relay datagram format, versions 1 and 2
+# Relay datagram format, versions 1 to 3
 
 `cmqt flush` (on the relay) sends, `cmqt unseal` (on the box) receives. The
 path is one-way UDP; the box never answers. Everything below is big endian.
 
 ```text
 offset  size  field
-0       1     version, 1 (plaintext line protocol) or 2 (plaintext is one zstd frame of line protocol)
+0       1     version, 1 (plaintext line protocol), 2 (one zstd frame) or 3 (one zstd frame with the trained dictionary)
 1       4     sender prefix: random per process start
 5       8     sequence number: 0, 1, 2 ... per prefix, one per datagram
 13      n+16  ChaCha20-Poly1305 ciphertext followed by the 16-byte tag
@@ -18,6 +18,7 @@ offset  size  field
 | AAD | The 13 header bytes, so version, prefix and sequence are authenticated. |
 | Plaintext | InfluxDB line protocol, newline-terminated lines, at most 1100 bytes. A line never splits across datagrams. A datagram is at most 1129 bytes, under the IPv6 minimum MTU of 1280. |
 | Version 2 | The sealed plaintext is ONE complete zstd frame (level 3) of newline-terminated line protocol, filled with as many lines as keep the COMPRESSED size at or below 1100 bytes. Every datagram is compressed on its own: none depends on another, so a lost datagram loses only its own lines. The receiver decompresses with a limit of 256 KiB; a bad or larger frame counts as `malformed`. The sender (HTTP mode of `cmqt flush`) seals version 2; the legacy RabbitMQ consumer mode still seals version 1. A receiver accepts both. |
+| Version 3 | As version 2, but the frame is compressed with the trained dictionary `crates/cmqt-relay/dict/relay-v3.zdict` (64 KiB, zstd dictionary id 3), compiled into both `cmqt flush` and `cmqt unseal`; a frame carries the id, so a receiver without the dictionary counts it `malformed`. The dictionary was trained by `tools/train-relay-dict.py` on 8 MiB of recorded real line protocol (`record_lines` in the flush config). Measured on held-out traffic (dictionary trained on the first 70%, tested on the last 30%): 214610 to 174222 bytes (-18.8%), 210 to 176 datagrams (-16%), compress time -25%. The sender emits version 3 only when `datagram_format = 3` is set in its config (default 2); switch it after the box runs a `cmqt unseal` that accepts 3. A receiver accepts 1, 2 and 3. Retraining changes the dictionary and so needs a new version byte. |
 | Version | A receiver rejects any version it does not know (`malformed`). A format change bumps the byte. |
 
 ## Receiver accounting

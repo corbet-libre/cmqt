@@ -17,8 +17,64 @@ use std::os::unix::fs::PermissionsExt;
 
 /// Version 1: the plaintext is line protocol. Version 2: the plaintext is one zstd frame of line
 /// protocol (every datagram compressed on its own, none depends on another).
+///
+/// Version 3: as version 2, but the frame is compressed with the trained dictionary `dict/relay-v3.zdict`
+/// (dictionary id 3), shipped inside both `cmqt flush` and `cmqt unseal`. The receiver must understand
+/// version 3 before the relay sends it.
 pub const VERSION: u8 = 1;
 pub const VERSION_ZSTD: u8 = 2;
+pub const VERSION_DICT: u8 = 3;
+static DICT: &[u8] = include_bytes!("../dict/relay-v3.zdict");
+const LEVEL: i32 = 3;
+
+thread_local! {
+    static COMPRESSOR: std::cell::RefCell<Option<zstd::bulk::Compressor<'static>>> = const { std::cell::RefCell::new(None) };
+    static DECOMPRESSOR: std::cell::RefCell<Option<zstd::bulk::Decompressor<'static>>> = const { std::cell::RefCell::new(None) };
+}
+
+static FORMAT_V3: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Datagram format the flusher sends: 2 (plain zstd frames) or 3 (dictionary). The receiver must
+/// understand 3 before the flusher is switched to it.
+pub fn set_format(v: u8) -> Result<(), String> {
+    match v {
+        2 | 3 => {
+            FORMAT_V3.store(v == 3, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
+        _ => Err(format!("datagram_format {v}: expected 2 or 3")),
+    }
+}
+
+/// One independent zstd frame of `raw` in the configured format (3: with the dictionary); the
+/// context is reused per thread.
+pub fn compress(raw: &[u8]) -> Vec<u8> {
+    if !FORMAT_V3.load(std::sync::atomic::Ordering::Relaxed) {
+        return zstd::bulk::compress(raw, LEVEL).unwrap_or_default();
+    }
+    compress_dict(raw)
+}
+
+fn compress_dict(raw: &[u8]) -> Vec<u8> {
+    COMPRESSOR.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.is_none() {
+            *c = zstd::bulk::Compressor::with_dictionary(LEVEL, DICT).ok();
+        }
+        c.as_mut().and_then(|c| c.compress(raw).ok()).unwrap_or_default()
+    })
+}
+
+/// Inverse of `compress` for format 3, at most `max` bytes out.
+pub fn decompress(frame: &[u8], max: usize) -> Result<Vec<u8>, ()> {
+    DECOMPRESSOR.with(|d| {
+        let mut d = d.borrow_mut();
+        if d.is_none() {
+            *d = zstd::bulk::Decompressor::with_dictionary(DICT).ok();
+        }
+        d.as_mut().ok_or(())?.decompress(frame, max).map_err(|_| ())
+    })
+}
 /// Largest decompressed payload `open` accepts (a datagram is below 1.3 KB; this bounds a bomb).
 pub const MAX_DECOMPRESSED: usize = 256 * 1024;
 pub const HEADER: usize = 13;
@@ -70,7 +126,8 @@ impl Sealer {
     }
     /// Seal an already compressed payload as version 2.
     pub fn seal_zstd(&mut self, compressed: &[u8]) -> Vec<u8> {
-        self.seal_version(VERSION_ZSTD, compressed)
+        let v = if FORMAT_V3.load(std::sync::atomic::Ordering::Relaxed) { VERSION_DICT } else { VERSION_ZSTD };
+        self.seal_version(v, compressed)
     }
     fn seal_version(&mut self, version: u8, payload: &[u8]) -> Vec<u8> {
         let mut hdr = [0u8; HEADER];
@@ -114,13 +171,15 @@ pub fn open(aead: &ChaCha20Poly1305, d: &[u8]) -> Result<Opened, OpenError> {
     if d.len() < HEADER + TAG {
         return Err(OpenError::Short);
     }
-    if d[0] != VERSION && d[0] != VERSION_ZSTD {
+    if d[0] != VERSION && d[0] != VERSION_ZSTD && d[0] != VERSION_DICT {
         return Err(OpenError::Version(d[0]));
     }
     let mut payload = aead
         .decrypt(&nonce(&d[..HEADER]), Payload { msg: &d[HEADER..], aad: &d[..HEADER] })
         .map_err(|_| OpenError::Auth)?;
-    if d[0] == VERSION_ZSTD {
+    if d[0] == VERSION_DICT {
+        payload = decompress(&payload, MAX_DECOMPRESSED).map_err(|_| OpenError::Decompress)?;
+    } else if d[0] == VERSION_ZSTD {
         payload = zstd::bulk::decompress(&payload, MAX_DECOMPRESSED).map_err(|_| OpenError::Decompress)?;
     }
     Ok(Opened {
@@ -241,8 +300,8 @@ mod tests {
         let other = ChaCha20Poly1305::new_from_slice(&[8u8; 32]).unwrap();
         assert_eq!(open(&other, &d).err(), Some(OpenError::Auth));
         let mut v = d.clone();
-        v[0] = 3;
-        assert_eq!(open(&aead(), &v).err(), Some(OpenError::Version(3)));
+        v[0] = 4;
+        assert_eq!(open(&aead(), &v).err(), Some(OpenError::Version(4)));
         assert_eq!(open(&aead(), &d[..20]).err(), Some(OpenError::Short));
     }
 
@@ -309,5 +368,16 @@ mod tests {
         assert!(load_key(p.to_str().unwrap()).is_err());
         std::fs::remove_file(&p).unwrap();
         std::fs::remove_dir(&dir).unwrap();
+    }
+
+    #[test]
+    fn version_2_and_3_both_open() {
+        let mut s = Sealer::new(aead());
+        let line = b"cpu,host=a value=1 1\n".repeat(20);
+        let v3 = s.seal_version(VERSION_DICT, &compress_dict(&line));
+        let v2 = s.seal_version(VERSION_ZSTD, &zstd::bulk::compress(&line, 3).unwrap());
+        assert_eq!(v3[0], VERSION_DICT);
+        assert_eq!(open(&aead(), &v3).unwrap().payload, line);
+        assert_eq!(open(&aead(), &v2).unwrap().payload, line);
     }
 }
