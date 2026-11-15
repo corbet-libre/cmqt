@@ -29,6 +29,9 @@ pub struct Config {
     pub datagram_queue: Option<String>,
     /// Box-silence watcher (HTTP mode): MQTT over WebSocket plus ntfy.
     pub watch: Option<crate::watch::Config>,
+    /// Directory with the status page (`index.html`, `app.js`, `style.css`): served on GET for any
+    /// path that is not `/otlp`, `/sd`, `/mqtt`; unknown paths answer `index.html` (client-side routes).
+    pub static_dir: Option<String>,
     pub key_file: String,
     /// Box address, e.g. `[2001:db8::1]:9514`.
     pub target: String,
