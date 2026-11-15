@@ -1,0 +1,7 @@
+# cmqt flush with the OTLP/HTTP input (alwaysdata site; TLS ends at the platform proxy).
+# http_listen may be left out: the platform variables IP and PORT are used.
+tokens_file = "/home/user/relay/tokens"     # one `name:token` per line, mode 0600
+key_file = "/home/user/relay/box.key"       # mode 0600
+target = "[2001:db8::1]:9514"               # the box
+rate_pps = 200
+burst = 20
