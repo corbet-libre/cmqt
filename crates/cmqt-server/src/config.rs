@@ -16,6 +16,15 @@ pub struct Config {
     pub broker_host: String,
     #[serde(default = "default_port")]
     pub broker_port: u16,
+    /// MQTT over WebSocket instead of plain TCP, e.g. `wss://relay.example.net/mqtt`
+    /// (TLS with the public web roots). Overrides `broker_host` and `broker_port`.
+    #[serde(default)]
+    pub broker_url: Option<String>,
+    /// Broker login; the password comes from a file (first line).
+    #[serde(default)]
+    pub broker_user: Option<String>,
+    #[serde(default)]
+    pub broker_password_file: Option<PathBuf>,
     /// Evaluation interval; equals vmalert's evaluation interval.
     #[serde(default = "default_interval")]
     pub interval_s: u64,

@@ -40,6 +40,15 @@ impl Link {
             cfg.broker_port,
         );
         opts.set_keep_alive(Duration::from_secs(120));
+        if let Some(url) = &cfg.broker_url {
+            opts = MqttOptions::new(opts.client_id(), url, 443);
+            opts.set_keep_alive(Duration::from_secs(120));
+            opts.set_transport(rumqttc::Transport::wss_with_default_config());
+        }
+        if let (Some(u), Some(f)) = (&cfg.broker_user, &cfg.broker_password_file) {
+            let pw = std::fs::read_to_string(f).unwrap_or_default();
+            opts.set_credentials(u, pw.lines().next().unwrap_or("").trim());
+        }
         let will_topic = format!("{}{}", tree.prefix(), topic::ONLINE);
         let will = serde_json::to_vec(&Online::offline()).unwrap_or_default();
         opts.set_last_will(LastWill::new(
