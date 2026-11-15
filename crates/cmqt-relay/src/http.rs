@@ -198,7 +198,7 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     if let Some(w) = cfg.watch.clone() {
         crate::watch::spawn(w, focus.clone())?;
     }
-    // Governors (D76), once a second: CPU share over a 30 s window paces ingest; the history cache
+    // Governors (D76), every 5 seconds: CPU share over a 30 s window paces ingest; the history cache
     // gets the RAM that is left below the total target. Every 5 minutes both go into the log
     // together with this process's resident memory and its peak.
     {
@@ -220,13 +220,13 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
                     g.cap = crate::govern::cache_cap(rss, g.bytes(), ram_t, floor, ceil);
                     ch = format!(" | cache {} B (cap {}), {} topics, oldest {:?} ms, evicted {}", g.bytes(), g.cap, g.series_count(), g.oldest_ms(), g.evicted_blocks);
                 }
-                if n % 300 == 0 {
+                if n % 60 == 0 {
                     let own = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
                     let f = |k: &str| own.lines().find(|l| l.starts_with(k)).unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
                     eprintln!("cmqt flush: cpu {share:.3} of {cpu_t} (delay {d} ms) | total rss {} B of {ram_t}, peak {rss_peak} | self {} | {}{ch}", rss, f("VmRSS:"), f("VmHWM:"));
                 }
                 n += 1;
-                std::thread::sleep(Duration::from_secs(1));
+                std::thread::sleep(Duration::from_secs(5));
             }
         });
     }
