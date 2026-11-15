@@ -40,7 +40,7 @@ pub fn load_tokens(path: &str) -> Result<Vec<(String, String)>, String> {
     Ok(v)
 }
 
-fn eq(a: &[u8], b: &[u8]) -> bool {
+pub fn eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
 }
 
@@ -217,6 +217,9 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
         let pw = std::fs::read_to_string(cfg.screen_password_file.as_deref().ok_or("screen_password_file missing")?).map_err(|e| e.to_string())?;
         let _ = CACHE.set((Mutex::new(crate::cache::Cache::new((cfg.cache_floor_mib << 20).max(1 << 20))), pw.trim().to_string()));
     }
+    if let Some(kc) = cfg.keep.clone() {
+        crate::keep::init(kc)?;
+    }
     let focus: crate::watch::SharedFocus = Default::default();
     if let Some(w) = cfg.watch.clone() {
         crate::watch::spawn(w, focus.clone())?;
@@ -278,6 +281,10 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
     let auth = hdr("Authorization");
     let gz = hdr("Content-Encoding").is_some_and(|e| e.eq_ignore_ascii_case("gzip"));
     let path_ok = rq.url().split('?').next().is_some_and(|p| p.ends_with("/v1/metrics"));
+    if crate::keep::enabled() && rq.url().split('?').next().is_some_and(|p| p.ends_with("/keep") || p.ends_with("/keep/export")) {
+        keep_request(rq, auth.as_deref());
+        return;
+    }
     if *rq.method() == tiny_http::Method::Get
         && rq.url().contains("/api/v1/messages")
         && let Some((cache, pw)) = CACHE.get()
@@ -349,6 +356,63 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
     let _ = rq.respond(tiny_http::Response::empty(status));
 }
 
+/// `/hist/keep` (admin login): GET lists the orders and the measured size; POST `{"prefix","end"}`
+/// (end in unix seconds, optional) orders a keep after writing out what RAM holds; DELETE
+/// `?prefix=` stops one. `/hist/keep/export?topic=&start=&end=` streams the kept messages.
+fn keep_request(mut rq: tiny_http::Request, auth: Option<&str>) {
+    let json = |code: u16, body: String| {
+        let mut r = tiny_http::Response::from_string(body).with_status_code(code);
+        if let Ok(h) = tiny_http::Header::from_bytes("Content-Type", "application/json") {
+            r = r.with_header(h);
+        }
+        r
+    };
+    if !crate::keep::admin_ok(auth) {
+        let _ = rq.respond(tiny_http::Response::empty(401));
+        return;
+    }
+    let url = rq.url().to_string();
+    let path = url.split('?').next().unwrap_or("");
+    if path.ends_with("/keep/export") {
+        let prefix = qparam(&url, "topic").unwrap_or_default();
+        let start = qparam(&url, "start").and_then(|v| ts_ms(&v)).unwrap_or(0);
+        let end = qparam(&url, "end").and_then(|v| ts_ms(&v)).unwrap_or(i64::MAX);
+        let mut hs = Vec::new();
+        if let Ok(h) = tiny_http::Header::from_bytes("Content-Type", "application/x-ndjson") {
+            hs.push(h);
+        }
+        let r = tiny_http::Response::new(tiny_http::StatusCode(200), hs, crate::keep::Export::new(prefix, start, end), None, None);
+        let _ = rq.respond(r);
+        return;
+    }
+    let resp = match rq.method() {
+        tiny_http::Method::Get => json(200, crate::keep::status_json()),
+        tiny_http::Method::Delete => match qparam(&url, "prefix") {
+            Some(p) if !p.is_empty() => match crate::keep::remove_order(&p) {
+                Ok(()) => json(200, r#"{"status":"ok"}"#.into()),
+                Err((c, e)) => json(c, serde_json::json!({"status":"error","error":e}).to_string()),
+            },
+            _ => json(400, r#"{"status":"error","error":"prefix"}"#.into()),
+        },
+        tiny_http::Method::Post => {
+            let mut body = String::new();
+            let _ = rq.as_reader().take(4096).read_to_string(&mut body);
+            let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+            let prefix = v["prefix"].as_str().unwrap_or("").to_string();
+            let end = v["end"].as_f64().map(|s| (s * 1000.0) as i64);
+            match (prefix.is_empty(), CACHE.get()) {
+                (false, Some((cache, _))) => match crate::keep::add_order(&prefix, end, cache) {
+                    Ok(n) => json(200, serde_json::json!({"status":"ok","blocks_written":n}).to_string()),
+                    Err((c, e)) => json(c, serde_json::json!({"status":"error","error":e}).to_string()),
+                },
+                _ => json(400, r#"{"status":"error","error":"prefix"}"#.into()),
+            }
+        }
+        _ => json(405, String::new()),
+    };
+    let _ = rq.respond(resp);
+}
+
 fn qparam(url: &str, k: &str) -> Option<String> {
     let q = url.split_once('?')?.1;
     q.split('&').find_map(|p| {
@@ -382,6 +446,18 @@ pub fn cache_put(topic: &str, payload: &[u8]) {
         let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
         c.lock().unwrap_or_else(|e| e.into_inner()).insert(topic, ts, payload);
     }
+    if crate::keep::enabled() {
+        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+        crate::keep::observe(topic, ts, payload);
+    }
+}
+
+pub fn cache_topics(prefix: &str) -> Vec<String> {
+    CACHE.get().map(|(c, _)| c.lock().unwrap_or_else(|e| e.into_inner()).topics_with(prefix)).unwrap_or_default()
+}
+
+pub fn cache_entries(topic: &str) -> Vec<(i64, Vec<u8>)> {
+    CACHE.get().map(|(c, _)| c.lock().unwrap_or_else(|e| e.into_inner()).entries(topic)).unwrap_or_default()
 }
 
 /// `GET .../api/v1/messages?topic=<prefix>&start=<s>&end=<s>&limit=<n>`: the box's output history as
@@ -399,7 +475,8 @@ fn messages(url: &str, auth: Option<&str>, cache: &Mutex<crate::cache::Cache>, p
     let start = qparam(url, "start").and_then(|v| ts_ms(&v)).unwrap_or(0);
     let end = qparam(url, "end").and_then(|v| ts_ms(&v)).unwrap_or(i64::MAX);
     let limit = qparam(url, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1000).min(10_000);
-    let r = cache.lock().unwrap_or_else(|e| e.into_inner()).range(&topic, start, end, limit);
+    let ram = cache.lock().unwrap_or_else(|e| e.into_inner()).range(&topic, start, end, limit);
+    let r = if crate::keep::enabled() { crate::keep::merge(crate::keep::db_range(&topic, start, end), ram, limit) } else { ram };
     let data: Vec<serde_json::Value> = r
         .into_iter()
         .map(|(k, t, p)| {

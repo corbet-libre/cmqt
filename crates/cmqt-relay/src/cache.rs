@@ -58,6 +58,17 @@ fn open_bytes(t: &Topic) -> usize {
     t.open.iter().map(|(_, p)| p.len() + 16).sum::<usize>() + t.last.len()
 }
 
+/// Compress entries into one block body: `(first_ts, last_ts, n, data)`.
+pub fn seal_entries(open: &[(i64, Vec<u8>)]) -> (i64, i64, usize, Vec<u8>) {
+    let b = seal(open);
+    (b.first_ts, b.last_ts, b.n, b.data)
+}
+
+/// Inverse of `seal_entries`.
+pub fn unseal_entries(first_ts: i64, n: usize, data: Vec<u8>) -> Vec<(i64, Vec<u8>)> {
+    unseal(&Block { first_ts, last_ts: first_ts, n, data })
+}
+
 fn seal(open: &[(i64, Vec<u8>)]) -> Block {
     let first = open[0].0;
     let mut raw = Vec::new();
@@ -140,6 +151,19 @@ impl Cache {
         true
     }
 
+    /// Topics that start with `prefix`.
+    pub fn topics_with(&self, prefix: &str) -> Vec<String> {
+        self.topics.range(prefix.to_string()..).take_while(|(k, _)| k.starts_with(prefix)).map(|(k, _)| k.clone()).collect()
+    }
+
+    /// Every stored message of one topic, oldest first.
+    pub fn entries(&self, topic: &str) -> Vec<(i64, Vec<u8>)> {
+        let Some(t) = self.topics.get(topic) else { return Vec::new() };
+        let mut out: Vec<(i64, Vec<u8>)> = t.blocks.iter().flat_map(unseal).collect();
+        out.extend(t.open.iter().cloned());
+        out
+    }
+
     /// Messages whose topic starts with `prefix` and whose time lies in `[start, end]` (ms), oldest
     /// first, at most `limit` (the newest ones when more match).
     pub fn range(&self, prefix: &str, start: i64, end: i64, limit: usize) -> Vec<(String, i64, Vec<u8>)> {
@@ -206,5 +230,21 @@ mod tests {
         }
         let raw: usize = 3200 * 70;
         assert!(c.bytes() < raw / 3, "bytes {} raw {raw}", c.bytes());
+    }
+
+    #[test]
+    fn entries_topics_and_block_codec() {
+        let mut c = Cache::new(1 << 20);
+        for i in 0..70i64 {
+            c.insert("public/srv/cpu", i, format!("{{\"v\":{i}}}").as_bytes());
+        }
+        c.insert("public/web/cpu", 5, b"{}");
+        assert_eq!(c.topics_with("public/srv/"), vec!["public/srv/cpu".to_string()]);
+        let e = c.entries("public/srv/cpu");
+        assert_eq!(e.len(), 70);
+        assert_eq!(e[69], (69, br#"{"v":69}"#.to_vec()));
+        let (first, last, n, data) = seal_entries(&e[..32]);
+        assert_eq!((first, last, n), (0, 31, 32));
+        assert_eq!(unseal_entries(first, n, data), e[..32].to_vec());
     }
 }

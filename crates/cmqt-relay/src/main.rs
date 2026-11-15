@@ -6,6 +6,7 @@ mod govern;
 mod http;
 mod watch;
 mod influx;
+mod keep;
 mod metrics;
 mod otlp;
 mod unseal;

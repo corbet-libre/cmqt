@@ -61,6 +61,8 @@ pub struct Config {
     /// Append the converted line protocol of ingested requests to this file until it holds 8 MiB
     /// (recorded real traffic for training the zstd dictionary, see docs/relay-datagram.md). Off when unset.
     pub record_lines: Option<String>,
+    /// Long-term keep in PostgreSQL (D78); needs the history cache.
+    pub keep: Option<crate::keep::Config>,
     /// Datagram format sent to the box: 2 (zstd frames) or 3 (frames with the trained dictionary).
     /// Switch to 3 only after the box's `cmqt unseal` understands it.
     #[serde(default = "default_format")]
