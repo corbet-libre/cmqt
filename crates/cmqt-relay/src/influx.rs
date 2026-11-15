@@ -139,7 +139,9 @@ pub fn convert(req: &Request, out: &mut Vec<String>) -> Tally {
                         add_attrs(&mut tags, &p.attributes);
                         let bucket = format!("{name}_bucket");
                         let mut cum = 0u64;
-                        for (i, c) in p.bucket_counts.iter().enumerate() {
+                        // No explicit bounds: the only bucket would be +Inf (= _count); skip it.
+                        let buckets = if p.explicit_bounds.is_empty() { &[][..] } else { &p.bucket_counts[..] };
+                        for (i, c) in buckets.iter().enumerate() {
                             cum += c;
                             let le = p.explicit_bounds.get(i).copied().unwrap_or(f64::INFINITY);
                             line(out, &bucket, &tags, Some(("le", bound(le))), cum as f64, p.time_unix_nano);
@@ -353,6 +355,15 @@ pub fn pack_zstd(lines: &[String], target: usize) -> (Vec<Vec<u8>>, u64) {
 
 #[cfg(test)]
 mod zstd_tests {
+    #[test]
+    fn inf_only_histogram_has_no_bucket_lines() {
+        let req = crate::otlp::decode(br#"{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"h","histogram":{"dataPoints":[{"timeUnixNano":"100","count":"3","sum":6.0,"bucketCounts":["3"]}]}}]}]}]}"#).unwrap();
+        let mut l = Vec::new();
+        super::convert(&req, &mut l);
+        assert!(l.iter().all(|x| !x.contains("_bucket")), "{l:?}");
+        assert_eq!(l.len(), 2);
+    }
+
     use super::*;
     #[test]
     fn frames_are_independent_and_within_target() {

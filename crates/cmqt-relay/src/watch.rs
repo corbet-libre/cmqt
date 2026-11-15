@@ -32,7 +32,7 @@ pub const SUBSYSTEMS: &[&str] = &["cpu", "memory", "disk-io", "disk-space", "net
 const HOLD: Duration = Duration::from_secs(60);
 /// The box publishes `internal/_focus` only when the set changes, and `_online` every 120 s: any
 /// live message from the box is the heartbeat. With none for this long nothing is in focus.
-const ALIVE: Duration = Duration::from_secs(180);
+const ALIVE: Duration = Duration::from_secs(300);
 
 /// Focus state in RAM (contract section 8): the pairs of the last `_focus` report are in focus,
 /// and stay in focus for 60 s after a report dropped them (hold-down against flapping); with no
@@ -146,7 +146,9 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
                     }
                     Ok(Event::Incoming(Packet::Publish(p))) if !p.retain => {
                         *l2.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
-                        focus.lock().unwrap_or_else(|e| e.into_inner()).heartbeat(Instant::now());
+                        if p.topic.ends_with("/_online") {
+                            focus.lock().unwrap_or_else(|e| e.into_inner()).heartbeat(Instant::now());
+                        }
                         if p.topic == "internal/_focus"
                             && let Some(pairs) = parse_focus(&p.payload)
                         {
@@ -196,7 +198,7 @@ mod tests {
         assert!(f.in_focus(t0 + s(189), "srv", "cpu")); // 60 s hold-down
         assert!(!f.in_focus(t0 + s(191), "srv", "cpu"));
         f.report(t0 + s(200), vec![("srv".into(), "cpu".into())]);
-        assert!(!f.in_focus(t0 + s(381), "srv", "cpu")); // nothing from the box for 180 s
+        assert!(!f.in_focus(t0 + s(501), "srv", "cpu")); // no _online for 300 s
         assert_eq!(parse_focus(br#"{"t":1,"firing":[["srv","cpu"],["a","b"]]}"#).unwrap().len(), 2);
     }
 
