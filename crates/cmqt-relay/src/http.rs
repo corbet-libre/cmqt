@@ -218,7 +218,7 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
                 if let Some((c, _)) = CACHE.get() {
                     let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
                     g.cap = crate::govern::cache_cap(rss, g.bytes(), ram_t, floor, ceil);
-                    ch = format!(" | cache {} B (cap {}), {} series, oldest {:?} ms, evicted {}", g.bytes(), g.cap, g.series_count(), g.oldest_ms(), g.evicted_blocks);
+                    ch = format!(" | cache {} B (cap {}), {} topics, oldest {:?} ms, evicted {}", g.bytes(), g.cap, g.series_count(), g.oldest_ms(), g.evicted_blocks);
                 }
                 if n % 300 == 0 {
                     let own = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
@@ -279,10 +279,10 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
         return;
     }
     if *rq.method() == tiny_http::Method::Get
-        && rq.url().contains("/api/v1/query_range")
+        && rq.url().contains("/api/v1/messages")
         && let Some((cache, pw)) = CACHE.get()
     {
-        let (code, body) = query_range(rq.url(), auth.as_deref(), cache, pw);
+        let (code, body) = messages(rq.url(), auth.as_deref(), cache, pw);
         let mut r = tiny_http::Response::from_string(body).with_status_code(code);
         if let Ok(h) = tiny_http::Header::from_bytes("Content-Type", "application/json") {
             r = r.with_header(h);
@@ -336,7 +336,7 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
             400
         } else {
             c.add("cmqt_flush_http_bytes_in_total", body.len() as u64);
-            match prepare_zstd(&body, c, CACHE.get().map(|(c, _)| c)) {
+            match prepare_zstd(&body, c) {
                 Err(e) => {
                     eprintln!("cmqt flush: http: dropping request: {e}");
                     c.add("cmqt_flush_bad_messages_total", 1);
@@ -376,8 +376,17 @@ fn ts_ms(v: &str) -> Option<i64> {
     v.parse::<f64>().ok().map(|f| (f * 1000.0) as i64)
 }
 
-/// Prometheus `query_range` subset for plain selectors; HTTP Basic user `screen`.
-fn query_range(url: &str, auth: Option<&str>, cache: &Mutex<crate::cache::Cache>, pw: &str) -> (u16, String) {
+/// Feed one message of the box (tile link) into the history cache, if it is on.
+pub fn cache_put(topic: &str, payload: &[u8]) {
+    if let Some((c, _)) = CACHE.get() {
+        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+        c.lock().unwrap_or_else(|e| e.into_inner()).insert(topic, ts, payload);
+    }
+}
+
+/// `GET .../api/v1/messages?topic=<prefix>&start=<s>&end=<s>&limit=<n>`: the box's output history as
+/// `{"status":"success","data":[{"topic","t":<s>,"payload":<json or string>}]}`; HTTP Basic, user `screen`.
+fn messages(url: &str, auth: Option<&str>, cache: &Mutex<crate::cache::Cache>, pw: &str) -> (u16, String) {
     use base64::Engine;
     let ok = auth
         .and_then(|a| a.strip_prefix("Basic "))
@@ -386,18 +395,19 @@ fn query_range(url: &str, auth: Option<&str>, cache: &Mutex<crate::cache::Cache>
     if !ok {
         return (401, String::new());
     }
-    let err = |m: &str| (400, format!(r#"{{"status":"error","errorType":"bad_data","error":"{m}"}}"#));
-    let Some(m) = qparam(url, "query").and_then(|q| crate::cache::parse_selector(&q)) else { return err("only plain selectors") };
-    let (Some(start), Some(end), Some(step)) = (qparam(url, "start").and_then(|v| ts_ms(&v)), qparam(url, "end").and_then(|v| ts_ms(&v)), qparam(url, "step").and_then(|v| v.parse::<f64>().ok().map(|f| (f * 1000.0) as i64))) else { return err("start, end, step") };
-    if step <= 0 || end < start || (end - start) / step > 11_000 {
-        return err("bad range");
-    }
-    let r = cache.lock().unwrap_or_else(|e| e.into_inner()).range(&m, start, end, step);
-    let result: Vec<serde_json::Value> = r
+    let topic = qparam(url, "topic").unwrap_or_default();
+    let start = qparam(url, "start").and_then(|v| ts_ms(&v)).unwrap_or(0);
+    let end = qparam(url, "end").and_then(|v| ts_ms(&v)).unwrap_or(i64::MAX);
+    let limit = qparam(url, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1000).min(10_000);
+    let r = cache.lock().unwrap_or_else(|e| e.into_inner()).range(&topic, start, end, limit);
+    let data: Vec<serde_json::Value> = r
         .into_iter()
-        .map(|(l, p)| serde_json::json!({"metric": l, "values": p.into_iter().map(|(t, v)| serde_json::json!([t as f64 / 1000.0, v.to_string()])).collect::<Vec<_>>()}))
+        .map(|(k, t, p)| {
+            let payload = serde_json::from_slice(&p).unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(&p).into_owned()));
+            serde_json::json!({"topic": k, "t": t as f64 / 1000.0, "payload": payload})
+        })
         .collect();
-    (200, serde_json::json!({"status":"success","data":{"resultType":"matrix","result":result}}).to_string())
+    (200, serde_json::json!({"status":"success","data":data}).to_string())
 }
 
 /// Seal and hand over, in order: sealing and publishing share one lock so the queue keeps the

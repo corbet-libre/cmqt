@@ -140,11 +140,13 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
                     // Live forwards have retain = false; the retained set replayed on subscribe is not news.
                     // The retained current set (read on subscribe): state, but not a heartbeat.
                     Ok(Event::Incoming(Packet::Publish(p))) if p.retain && p.topic == "internal/_focus" => {
+                        crate::http::cache_put(&p.topic, &p.payload);
                         if let Some(pairs) = parse_focus(&p.payload) {
                             focus.lock().unwrap_or_else(|e| e.into_inner()).restore(Instant::now(), pairs);
                         }
                     }
                     Ok(Event::Incoming(Packet::Publish(p))) if !p.retain => {
+                        crate::http::cache_put(&p.topic, &p.payload);
                         *l2.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
                         if p.topic.ends_with("/_online") {
                             focus.lock().unwrap_or_else(|e| e.into_inner()).heartbeat(Instant::now());
@@ -155,6 +157,8 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
                             focus.lock().unwrap_or_else(|e| e.into_inner()).report(Instant::now(), pairs);
                         }
                     }
+                    // Retained tiles and states: the box's current output, stored (deduplicated) too.
+                    Ok(Event::Incoming(Packet::Publish(p))) => crate::http::cache_put(&p.topic, &p.payload),
                     Ok(_) => {}
                     Err(e) => {
                         eprintln!("cmqt flush: watch mqtt: {e}");

@@ -191,16 +191,10 @@ async fn session(cfg: &Config, url: &str, sock: &UdpSocket, sealer: &mut Sealer,
 
 /// One request body to compressed datagram payloads (each an independent zstd frame, at most
 /// `MAX_PAYLOAD` bytes compressed).
-pub fn prepare_zstd(body: &[u8], c: &Counters, cache: Option<&std::sync::Mutex<crate::cache::Cache>>) -> Result<Vec<Vec<u8>>, String> {
+pub fn prepare_zstd(body: &[u8], c: &Counters) -> Result<Vec<Vec<u8>>, String> {
     let req = otlp::decode(body)?;
     let mut lines = Vec::new();
     let t = influx::convert(&req, &mut lines);
-    if let Some(cache) = cache {
-        let mut g = cache.lock().unwrap_or_else(|e| e.into_inner());
-        for l in &lines {
-            g.insert_line(l);
-        }
-    }
     let (packed, oversize) = influx::pack_zstd(&lines, MAX_PAYLOAD);
     c.add("cmqt_flush_points_total", t.points);
     c.add("cmqt_flush_skipped_points_total", t.skipped);
