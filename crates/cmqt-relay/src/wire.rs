@@ -22,11 +22,13 @@ pub const TAG: usize = 16;
 pub const MAX_PAYLOAD: usize = 1100;
 
 /// Key file: 32 raw bytes, or 64 hex characters (trailing newline allowed).
-/// Group and other permission bits make the file unusable.
+/// Group and other permission bits make the file unusable (except a systemd credential, 0440 under /run/credentials/).
 pub fn load_key(path: &str) -> Result<ChaCha20Poly1305, String> {
     let meta = std::fs::metadata(path).map_err(|e| format!("key file {path}: {e}"))?;
     let mode = meta.permissions().mode() & 0o777;
-    if mode & 0o177 != 0 {
+    // systemd credentials (LoadCredential=) are root-owned 0440 inside a 0700 per-service directory.
+    let credential = path.starts_with("/run/credentials/") && mode == 0o440;
+    if mode & 0o177 != 0 && !credential {
         return Err(format!("key file {path} has mode {mode:o}; it must be 0600 (no group/other access)"));
     }
     let raw = std::fs::read(path).map_err(|e| format!("key file {path}: {e}"))?;
