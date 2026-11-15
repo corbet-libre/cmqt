@@ -113,6 +113,11 @@ fn send(dg: &[Vec<u8>], out: &Mutex<Out>, c: &Counters) -> u16 {
                 c.add("cmqt_flush_datagrams_total", 1);
                 c.add("cmqt_flush_bytes_total", sealed.len() as u64);
             }
+            // ICMP port unreachable from a stopped receiver: the datagram is lost like any other
+            // during an outage (counted); refusing the request would only make senders pile up.
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                c.add("cmqt_flush_send_errors_total", 1);
+            }
             Err(e) => {
                 eprintln!("cmqt flush: send: {e}");
                 c.add("cmqt_flush_send_errors_total", 1);
