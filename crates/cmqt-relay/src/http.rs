@@ -78,7 +78,7 @@ impl Publisher {
         if self.chan.as_ref().is_none_or(|c| !c.status().connected()) {
             let conn = Connection::connect(&self.url, ConnectionProperties::default()).await.map_err(|e| e.to_string())?;
             let ch = conn.create_channel().await.map_err(|e| e.to_string())?;
-            declare(&ch, &self.queue).await?;
+            let ch = declare(&conn, &ch, &self.queue).await?;
             ch.confirm_select(ConfirmSelectOptions::default()).await.map_err(|e| e.to_string())?;
             self.chan = Some(ch);
         }
@@ -104,11 +104,34 @@ impl Publisher {
     }
 }
 
-async fn declare(ch: &Channel, queue: &str) -> Result<(), String> {
-    ch.queue_declare(queue.into(), QueueDeclareOptions { durable: true, ..Default::default() }, FieldTable::default())
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+/// Cap of the datagram queue: when the box is unreachable the queue holds sealed datagrams in the
+/// plan's disk; past 64 MiB the oldest are dropped (a gap the box counts) instead of filling it.
+const QUEUE_MAX_BYTES: i64 = 64 << 20;
+
+fn queue_args() -> FieldTable {
+    let mut t = FieldTable::default();
+    t.insert("x-max-length-bytes".into(), lapin::types::AMQPValue::LongLongInt(QUEUE_MAX_BYTES));
+    t.insert("x-overflow".into(), lapin::types::AMQPValue::LongString("drop-head".into()));
+    t
+}
+
+/// Declare with the cap as queue arguments (the platform exposes no policy API: the management
+/// plugin is not reachable). Arguments of an existing queue cannot change, so a mismatch
+/// (PRECONDITION_FAILED, which closes the channel) deletes the queue once and declares it anew.
+/// Returns the channel to use afterwards (a new one after a recreate).
+async fn declare(conn: &Connection, ch: &Channel, queue: &str) -> Result<Channel, String> {
+    let opts = QueueDeclareOptions { durable: true, ..Default::default() };
+    match ch.queue_declare(queue.into(), opts, queue_args()).await {
+        Ok(_) => Ok(ch.clone()),
+        Err(e) if e.to_string().contains("PRECONDITION") || e.to_string().contains("406") => {
+            eprintln!("cmqt flush: queue {queue} has other arguments; deleting and declaring it again once");
+            let ch2 = conn.create_channel().await.map_err(|e| e.to_string())?;
+            ch2.queue_delete(queue.into(), QueueDeleteOptions::default()).await.map_err(|e| e.to_string())?;
+            ch2.queue_declare(queue.into(), opts, queue_args()).await.map_err(|e| e.to_string())?;
+            Ok(ch2)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Drain the datagram queue: pace, send the already sealed bytes, acknowledge.
@@ -125,7 +148,7 @@ async fn drain(url: String, queue: String, target: String, rate: f64, burst: f64
         let r: Result<(), String> = async {
             let conn = Connection::connect(&url, ConnectionProperties::default()).await.map_err(|e| e.to_string())?;
             let ch = conn.create_channel().await.map_err(|e| e.to_string())?;
-            declare(&ch, &queue).await?;
+            let ch = declare(&conn, &ch, &queue).await?;
             ch.basic_qos(prefetch, BasicQosOptions::default()).await.map_err(|e| e.to_string())?;
             let mut consumer = ch.basic_consume(queue.as_str().into(), "cmqt-drain".into(), BasicConsumeOptions::default(), FieldTable::default()).await.map_err(|e| e.to_string())?;
             eprintln!("cmqt flush: draining {queue}");
