@@ -68,21 +68,19 @@ export interface HostInfo {
 
 const SCREEN_NAME = /^[a-z0-9][a-z0-9.-]*$/;
 
-/** `<screen>.status.corbet.<ch|internal>`; the bare name is the overview. */
-export function parseHost(hostname: string): HostInfo | null {
-  const m = /^(?:(.+)\.)?status\.corbet\.(ch|internal)$/.exec(hostname.toLowerCase());
+/** `status.corbet.<ch|internal>/<screen>`; the bare path is the overview. */
+export function parseHost(hostname: string, pathname = "/"): HostInfo | null {
+  const m = /^status\.corbet\.(ch|internal)$/.exec(hostname.toLowerCase());
   if (!m) return null;
-  const screen = m[1] ?? "overview";
+  const screen = pathname.replace(/^\/+|\/+$/g, "") || "overview";
   if (!SCREEN_NAME.test(screen)) return null;
-  return { screen, tld: m[2] as Tld };
+  return { screen, tld: m[1] as Tld };
 }
 
-/** URL of another screen on the same door; null for names that are not screens. */
-export function screenUrl(screen: string, tld: Tld): string | null {
+/** URL of another screen on the same door (a path); null for names that are not screens. */
+export function screenUrl(screen: string, _tld: Tld): string | null {
   if (!SCREEN_NAME.test(screen)) return null;
-  return screen === "overview"
-    ? `https://status.corbet.${tld}/`
-    : `https://${screen}.status.corbet.${tld}/`;
+  return screen === "overview" ? "/" : `/${screen}`;
 }
 
 export type Freshness = "fresh" | "unreachable" | "updating";

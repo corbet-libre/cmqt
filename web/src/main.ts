@@ -19,7 +19,7 @@ const overlay = document.getElementById("overlay") as HTMLElement;
 // The browser derives everything from its own host name. For local work the
 // query string can stand in: ?screen=srv&tld=internal&broker=ws://127.0.0.1:9001
 const q = new URLSearchParams(location.search);
-const fromHost = parseHost(location.hostname);
+const fromHost = parseHost(location.hostname, location.pathname);
 const host: HostInfo | null =
   fromHost ?? (q.get("screen") ? { screen: q.get("screen") as string, tld: q.get("tld") === "ch" ? "ch" : "internal" } : null);
 // The relay serves both trees on one broker; the tree is the topic prefix.

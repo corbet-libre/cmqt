@@ -4,17 +4,18 @@ import { test } from "node:test";
 import { colourClass, freshness, parseHost, screenUrl, stackOrder } from "./logic.ts";
 import { layoutTopology } from "./topology.ts";
 
-test("screen comes from the host name", () => {
-  assert.deepEqual(parseHost("status.corbet.ch"), { screen: "overview", tld: "ch" });
-  assert.deepEqual(parseHost("fra-0.status.corbet.internal"), { screen: "fra-0", tld: "internal" });
-  assert.deepEqual(parseHost("site.fra.brh.status.corbet.ch"), { screen: "site.fra.brh", tld: "ch" });
-  assert.equal(parseHost("example.com"), null);
-  assert.equal(parseHost("evil.status.corbet.ch.example.com"), null);
+test("screen comes from the path", () => {
+  assert.deepEqual(parseHost("status.corbet.ch", "/"), { screen: "overview", tld: "ch" });
+  assert.deepEqual(parseHost("status.corbet.internal", "/fra-0"), { screen: "fra-0", tld: "internal" });
+  assert.deepEqual(parseHost("status.corbet.ch", "/site.fra.brh/"), { screen: "site.fra.brh", tld: "ch" });
+  assert.equal(parseHost("example.com", "/"), null);
+  assert.equal(parseHost("evil.status.corbet.ch", "/"), null);
+  assert.equal(parseHost("status.corbet.ch", "/a/b"), null);
 });
 
-test("links are real urls on the same door and never from odd names", () => {
-  assert.equal(screenUrl("srv", "ch"), "https://srv.status.corbet.ch/");
-  assert.equal(screenUrl("overview", "internal"), "https://status.corbet.internal/");
+test("links are paths on the same door and never from odd names", () => {
+  assert.equal(screenUrl("srv", "ch"), "/srv");
+  assert.equal(screenUrl("overview", "internal"), "/");
   assert.equal(screenUrl("javascript:alert(1)", "ch"), null);
   assert.equal(screenUrl("a/b", "ch"), null);
 });
