@@ -39,7 +39,7 @@ impl Link {
             &cfg.broker_host,
             cfg.broker_port,
         );
-        opts.set_keep_alive(Duration::from_secs(10));
+        opts.set_keep_alive(Duration::from_secs(120));
         let will_topic = format!("{}{}", tree.prefix(), topic::ONLINE);
         let will = serde_json::to_vec(&Online::offline()).unwrap_or_default();
         opts.set_last_will(LastWill::new(

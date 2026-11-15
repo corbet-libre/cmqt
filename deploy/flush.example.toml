@@ -1,0 +1,9 @@
+# cmqt flush configuration (example). The AMQP URL may come from CMQT_AMQP_URL instead.
+amqp_url = "amqp://user:password@amqp.example.net:5672/vhost"
+queue = "otlp_metrics"            # pre-declared, durable
+key_file = "/run/secrets/cmqt-relay.key"   # mode 0600
+target = "[2001:db8::1]:9514"     # the box
+rate_pps = 200                    # paced datagrams per second
+burst = 20
+prefetch = 8
+metrics_listen = "127.0.0.1:9516"

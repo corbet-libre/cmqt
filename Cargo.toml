@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/cmqt", "crates/cmqt-server"]
+members = ["crates/cmqt", "crates/cmqt-server", "crates/cmqt-relay"]
 
 [workspace.package]
 version = "0.1.0"

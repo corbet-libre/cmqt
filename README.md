@@ -38,6 +38,23 @@ The public tree is built from `dashboards/public/` only. As defence in depth,
 layout links and topology members that point at screens missing from the
 public tree are removed before publishing.
 
+## Relay: `cmqt flush` and `cmqt unseal`
+
+Binary `cmqt` (crate `cmqt-relay`) carries OTLP metrics one way from a
+durable RabbitMQ queue to VictoriaMetrics over sealed UDP/IPv6. Format:
+[docs/relay-datagram.md](docs/relay-datagram.md).
+
+| Command | Runs on | Config |
+|---|---|---|
+| `cmqt flush <flush.toml>` | relay (no root, 256 MiB) | `deploy/flush.example.toml` |
+| `cmqt unseal <unseal.toml>` | box (IPv6 only) | `deploy/unseal.example.toml` |
+
+Both expose Prometheus text counters on `metrics_listen`. The receive buffer
+is clamped by `net.core.rmem_max`; the box must raise it to at least `rcvbuf`
+(default 8 MiB), and `cmqt unseal` warns at start when it is clamped. The
+queue must be declared durable beforehand (the Collector's `rabbitmqexporter`
+creates none). Decoding is automatic: protobuf or OTLP JSON.
+
 ## Web client
 
 Screen and door come from `location.hostname` (`<screen>.status.corbet.<ch|internal>`,

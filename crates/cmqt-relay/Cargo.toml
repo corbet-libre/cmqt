@@ -1,0 +1,27 @@
+[package]
+name = "cmqt-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "cmqt flush and cmqt unseal: one-way sealed-UDP relay of OTLP metrics from RabbitMQ to VictoriaMetrics"
+
+[[bin]]
+name = "cmqt"
+path = "src/main.rs"
+
+[dependencies]
+chacha20poly1305 = "0.11.0"
+futures-lite = "2.6.1"
+lapin = "4.12.3"
+prost = "0.14.6"
+rand = "0.10.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+socket2 = "0.6.5"
+tokio = { version = "1.54.1", features = ["rt", "macros", "time", "net", "signal"] }
+toml = "1.2.1"
+ureq = "3"
+
+[lints]
+workspace = true

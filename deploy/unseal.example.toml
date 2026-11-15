@@ -1,0 +1,6 @@
+# cmqt unseal configuration (example). Raise net.core.rmem_max to >= rcvbuf.
+listen = "[::]:9514"
+key_file = "/run/secrets/cmqt-relay.key"   # mode 0600
+rcvbuf = 8388608
+forward_url = "http://127.0.0.1:8428/influx/write"   # VictoriaMetrics, started with -influxSkipSingleField
+metrics_listen = "127.0.0.1:9515"
