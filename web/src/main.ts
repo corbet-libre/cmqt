@@ -13,6 +13,25 @@ import {
 } from "./logic.ts";
 import { drawTopology, paintNode } from "./topology.ts";
 
+// Maintenance marker of the relay (set by an operator): shown as a banner above the board.
+(function maintenanceBanner(): void {
+  const el = document.createElement("div");
+  el.setAttribute("role", "status");
+  el.style.cssText = "display:none;padding:6px 12px;background:#b26a00;color:#fff;font:14px system-ui;text-align:center";
+  document.body.prepend(el);
+  const poll = (): void => {
+    fetch("/hist/maintenance", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { maintenance: { reason: string } | null } | null) => {
+        el.textContent = j?.maintenance ? `maintenance: ${j.maintenance.reason}` : "";
+        el.style.display = j?.maintenance ? "block" : "none";
+      })
+      .catch(() => {});
+  };
+  poll();
+  setInterval(poll, 60000);
+})();
+
 const app = document.getElementById("app") as HTMLElement;
 const overlay = document.getElementById("overlay") as HTMLElement;
 

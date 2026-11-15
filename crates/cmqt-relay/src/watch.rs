@@ -112,6 +112,11 @@ impl Silence {
     pub fn new(limit: Duration) -> Self {
         Silence { limit, silent: false }
     }
+    /// Forget the alarm state (maintenance): nothing is paged or announced as back while it holds, and
+    /// when it ends a box that is still silent is paged again after the threshold.
+    pub fn reset(&mut self) {
+        self.silent = false;
+    }
     pub fn tick(&mut self, since_last: Duration) -> Option<&'static str> {
         if !self.silent && since_last >= self.limit {
             self.silent = true;
@@ -195,6 +200,10 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
         loop {
             std::thread::sleep(Duration::from_secs(10));
             let since = last.lock().unwrap_or_else(|e| e.into_inner()).elapsed();
+            if crate::http::maintenance().is_some() {
+                s.reset();
+                continue;
+            }
             match s.tick(since) {
                 Some("silent") => notify(&cfg, &topic, "Observability box silent", &format!("Nothing has arrived from the box over the tile link for {} s.", since.as_secs())),
                 Some(_) => notify(&cfg, &topic, "Observability box back", "The box is publishing tiles again."),
@@ -238,6 +247,21 @@ mod tests {
         assert_eq!(got, vec![("cpu".into(), "cpu".into()), ("cpu".into(), "loadavg".into()), ("disk-space".into(), "filesystem".into())]);
         assert_eq!(sd_device_body(&f, t0, "nobody"), "[]");
         assert!(SUBSYSTEMS.iter().all(|s| COLLECTORS.iter().any(|(c, _)| c == s)));
+    }
+
+    #[test]
+    fn maintenance_reset_mutes_and_a_still_silent_box_pages_again_after_it() {
+        let secs = Duration::from_secs;
+        let mut s = Silence::new(secs(300));
+        assert_eq!(s.tick(secs(400)), Some("silent"));
+        s.reset(); // maintenance begins: nothing more, and no "back" either
+        assert_eq!(s.tick(secs(10)), None);
+        s.reset();
+        s.reset(); // maintenance still on, box silent again: still nothing is sent by the loop
+        // maintenance cleared while the box stays silent past the threshold: paged again
+        assert_eq!(s.tick(secs(500)), Some("silent"));
+        assert_eq!(s.tick(secs(600)), None);
+        assert_eq!(s.tick(secs(5)), Some("back"));
     }
 
     #[test]

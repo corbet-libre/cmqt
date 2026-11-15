@@ -218,6 +218,9 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
         Sink::Direct { sock, bucket: Bucket::new(cfg.rate_pps, cfg.burst) }
     };
     wire::set_format(cfg.datagram_format)?;
+    if let Some(m) = &cfg.maintenance_file {
+        maint_load(m);
+    }
     if let Some(r) = &cfg.record_lines {
         crate::flush::set_record(r);
     }
@@ -289,6 +292,11 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
     let auth = hdr("Authorization");
     let gz = hdr("Content-Encoding").is_some_and(|e| e.eq_ignore_ascii_case("gzip"));
     let path_ok = rq.url().split('?').next().is_some_and(|p| p.ends_with("/v1/metrics"));
+    if let Some(p) = rq.url().split('?').next().filter(|p| p.ends_with("/maintenance")) {
+        let admin = p.ends_with("/admin/maintenance");
+        maintenance_request(rq, auth.as_deref(), admin);
+        return;
+    }
     if crate::keep::enabled() && rq.url().split('?').next().is_some_and(|p| p.ends_with("/keep") || p.ends_with("/keep/export")) {
         keep_request(rq, auth.as_deref());
         return;
@@ -460,6 +468,88 @@ pub fn cache_put(topic: &str, payload: &[u8]) {
         let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
         crate::keep::observe(topic, ts, payload);
     }
+}
+
+static MAINT: Mutex<Option<(String, i64)>> = Mutex::new(None);
+static MAINT_FILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The maintenance marker `(reason, since in ms)`; while set, the box-silence watcher does not page.
+pub fn maintenance() -> Option<(String, i64)> {
+    MAINT.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn maint_json() -> String {
+    match maintenance() {
+        Some((r, s)) => serde_json::json!({"maintenance": {"reason": r, "since": s as f64 / 1000.0}}).to_string(),
+        None => r#"{"maintenance":null}"#.to_string(),
+    }
+}
+
+fn maint_set(v: Option<(String, i64)>) {
+    *MAINT.lock().unwrap_or_else(|e| e.into_inner()) = v.clone();
+    if let Some(p) = MAINT_FILE.get() {
+        let _ = match v {
+            Some((r, s)) => std::fs::write(p, serde_json::json!({"reason": r, "since": s}).to_string()),
+            None => std::fs::remove_file(p).or(Ok(())),
+        };
+    }
+}
+
+fn maint_load(path: &str) {
+    let _ = MAINT_FILE.set(path.to_string());
+    if let Ok(s) = std::fs::read_to_string(path)
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(&s)
+        && let Some(r) = v["reason"].as_str()
+    {
+        *MAINT.lock().unwrap_or_else(|e| e.into_inner()) = Some((r.to_string(), v["since"].as_i64().unwrap_or(0)));
+    }
+}
+
+/// `/admin/maintenance` (admin login): POST `{"reason"}` sets, DELETE clears, GET shows. The public
+/// `/maintenance` (GET) shows the same marker to the status page.
+fn maintenance_request(mut rq: tiny_http::Request, auth: Option<&str>, admin: bool) {
+    let json = |code: u16, body: String| {
+        let mut r = tiny_http::Response::from_string(body).with_status_code(code);
+        if let Ok(h) = tiny_http::Header::from_bytes("Content-Type", "application/json") {
+            r = r.with_header(h);
+        }
+        if let Ok(h) = tiny_http::Header::from_bytes("Cache-Control", "no-store") {
+            r = r.with_header(h);
+        }
+        r
+    };
+    if !admin {
+        let _ = rq.respond(json(200, maint_json()));
+        return;
+    }
+    if !crate::keep::admin_ok(auth) {
+        let _ = rq.respond(tiny_http::Response::empty(401));
+        return;
+    }
+    let resp = match rq.method() {
+        tiny_http::Method::Get => json(200, maint_json()),
+        tiny_http::Method::Delete => {
+            maint_set(None);
+            eprintln!("cmqt flush: maintenance cleared");
+            json(200, maint_json())
+        }
+        tiny_http::Method::Post => {
+            let mut body = String::new();
+            let _ = rq.as_reader().take(4096).read_to_string(&mut body);
+            let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+            match v["reason"].as_str().map(str::trim).filter(|r| !r.is_empty() && r.len() <= 200) {
+                Some(r) => {
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+                    maint_set(Some((r.to_string(), now)));
+                    eprintln!("cmqt flush: maintenance set: {r}");
+                    json(200, maint_json())
+                }
+                None => json(400, r#"{"error":"reason: 1 to 200 characters"}"#.into()),
+            }
+        }
+        _ => json(405, String::new()),
+    };
+    let _ = rq.respond(resp);
 }
 
 pub fn cache_topics(prefix: &str) -> Vec<String> {
