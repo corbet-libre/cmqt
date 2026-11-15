@@ -30,26 +30,49 @@ fn default_silence() -> u64 {
 /// Subsystems the foveal collection knows (the `subsystem` label of the attention rules).
 pub const SUBSYSTEMS: &[&str] = &["cpu", "memory", "disk-io", "disk-space", "network"];
 const HOLD: Duration = Duration::from_secs(60);
-const STALE: Duration = Duration::from_secs(120);
+/// The box publishes `internal/_focus` only when the set changes, and `_online` every 120 s: any
+/// live message from the box is the heartbeat. With none for this long nothing is in focus.
+const ALIVE: Duration = Duration::from_secs(180);
 
-/// Focus state in RAM (contract section 8): a pair is in focus for 60 s after the last report
-/// that listed it; with no report at all for 120 s nothing is in focus.
+/// Focus state in RAM (contract section 8): the pairs of the last `_focus` report are in focus,
+/// and stay in focus for 60 s after a report dropped them (hold-down against flapping); with no
+/// live message from the box at all for 180 s nothing is in focus (stale focus is never kept).
 #[derive(Default)]
 pub struct Focus {
-    last_report: Option<Instant>,
-    firing: std::collections::HashMap<(String, String), Instant>,
+    alive: Option<Instant>,
+    current: std::collections::HashSet<(String, String)>,
+    dropped: std::collections::HashMap<(String, String), Instant>,
 }
 impl Focus {
-    pub fn report(&mut self, now: Instant, pairs: Vec<(String, String)>) {
-        self.last_report = Some(now);
-        for p in pairs {
-            self.firing.insert(p, now);
+    /// Any live message from the box.
+    pub fn heartbeat(&mut self, now: Instant) {
+        self.alive = Some(now);
+    }
+    /// The retained set read after a (re)subscribe: it is the last report, but proves nothing about
+    /// the box being alive now, so only the set is taken and only while the box is alive.
+    pub fn restore(&mut self, now: Instant, pairs: Vec<(String, String)>) {
+        if self.current.is_empty() && self.dropped.is_empty() {
+            self.current = pairs.into_iter().collect();
+            self.alive.get_or_insert(now);
         }
-        self.firing.retain(|_, t| now.duration_since(*t) < HOLD * 2);
+    }
+    /// A `_focus` report: the complete set of firing pairs.
+    pub fn report(&mut self, now: Instant, pairs: Vec<(String, String)>) {
+        self.alive = Some(now);
+        let new: std::collections::HashSet<_> = pairs.into_iter().collect();
+        for p in self.current.difference(&new) {
+            self.dropped.insert(p.clone(), now);
+        }
+        for p in &new {
+            self.dropped.remove(p);
+        }
+        self.dropped.retain(|_, t| now.duration_since(*t) < HOLD);
+        self.current = new;
     }
     pub fn in_focus(&self, now: Instant, device: &str, subsystem: &str) -> bool {
-        self.last_report.is_some_and(|r| now.duration_since(r) < STALE)
-            && self.firing.get(&(device.to_string(), subsystem.to_string())).is_some_and(|t| now.duration_since(*t) < HOLD)
+        let k = (device.to_string(), subsystem.to_string());
+        self.alive.is_some_and(|a| now.duration_since(a) < ALIVE)
+            && (self.current.contains(&k) || self.dropped.get(&k).is_some_and(|t| now.duration_since(*t) < HOLD))
     }
 }
 pub type SharedFocus = Arc<Mutex<Focus>>;
@@ -115,8 +138,15 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
             for ev in conn.iter() {
                 match ev {
                     // Live forwards have retain = false; the retained set replayed on subscribe is not news.
+                    // The retained current set (read on subscribe): state, but not a heartbeat.
+                    Ok(Event::Incoming(Packet::Publish(p))) if p.retain && p.topic == "internal/_focus" => {
+                        if let Some(pairs) = parse_focus(&p.payload) {
+                            focus.lock().unwrap_or_else(|e| e.into_inner()).restore(Instant::now(), pairs);
+                        }
+                    }
                     Ok(Event::Incoming(Packet::Publish(p))) if !p.retain => {
                         *l2.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+                        focus.lock().unwrap_or_else(|e| e.into_inner()).heartbeat(Instant::now());
                         if p.topic == "internal/_focus"
                             && let Some(pairs) = parse_focus(&p.payload)
                         {
@@ -152,7 +182,7 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
-    fn focus_holds_60s_and_clears_when_reports_stop() {
+    fn focus_follows_reports_holds_60s_and_clears_when_the_box_goes_silent() {
         let t0 = Instant::now();
         let mut f = Focus::default();
         let s = |n| Duration::from_secs(n);
@@ -160,11 +190,13 @@ mod tests {
         f.report(t0, vec![("srv".into(), "cpu".into())]);
         assert!(f.in_focus(t0 + s(1), "srv", "cpu"));
         assert!(!f.in_focus(t0 + s(1), "srv", "memory"));
-        f.report(t0 + s(15), vec![]); // heartbeat without the pair
-        assert!(f.in_focus(t0 + s(59), "srv", "cpu"));
-        assert!(!f.in_focus(t0 + s(61), "srv", "cpu")); // 60 s after the last listing
-        f.report(t0 + s(30), vec![("srv".into(), "cpu".into())]);
-        assert!(!f.in_focus(t0 + s(151), "srv", "cpu")); // no report for 120 s: stale
+        f.heartbeat(t0 + s(120)); // no change reported: the set stands
+        assert!(f.in_focus(t0 + s(121), "srv", "cpu"));
+        f.report(t0 + s(130), vec![]); // the alert resolved
+        assert!(f.in_focus(t0 + s(189), "srv", "cpu")); // 60 s hold-down
+        assert!(!f.in_focus(t0 + s(191), "srv", "cpu"));
+        f.report(t0 + s(200), vec![("srv".into(), "cpu".into())]);
+        assert!(!f.in_focus(t0 + s(381), "srv", "cpu")); // nothing from the box for 180 s
         assert_eq!(parse_focus(br#"{"t":1,"firing":[["srv","cpu"],["a","b"]]}"#).unwrap().len(), 2);
     }
 

@@ -121,7 +121,7 @@ impl Link {
         let topic = format!("{}{}", self.tree.prefix(), rel_topic);
         if let Err(e) = self
             .client
-            .try_publish(topic, QoS::AtMostOnce, false, payload)
+            .try_publish(topic, QoS::AtLeastOnce, true, payload) // retained: a restarted relay reads the current set at once
         {
             eprintln!(
                 "cmqt-server: {} focus publish dropped: {e}",
