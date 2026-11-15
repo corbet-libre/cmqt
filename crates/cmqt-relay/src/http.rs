@@ -48,6 +48,14 @@ pub fn authorized(header: Option<&str>, tokens: &[String]) -> bool {
 pub fn serve(listen: &str, tokens: Vec<String>, out: Out, c: Arc<Counters>) -> Result<(), String> {
     let server = tiny_http::Server::http(listen).map_err(|e| format!("http listen {listen}: {e}"))?;
     eprintln!("cmqt flush: OTLP/HTTP on {listen}");
+    // Resident memory and its peak into the log every 5 minutes (the host's own tools do not see a site's process).
+    std::thread::spawn(|| loop {
+        if let Ok(st) = std::fs::read_to_string("/proc/self/status") {
+            let f = |k: &str| st.lines().find(|l| l.starts_with(k)).unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
+            eprintln!("cmqt flush: mem {} | {}", f("VmRSS:"), f("VmHWM:"));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(300));
+    });
     let server = Arc::new(server);
     let out = Arc::new(Mutex::new(out));
     let tokens = Arc::new(tokens);
