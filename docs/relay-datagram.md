@@ -13,7 +13,7 @@ offset  size  field
 
 | Item | Rule |
 |---|---|
-| Key | One static 32-byte key. File holds 32 raw bytes or 64 hex characters. The file must have no group/other permission bits (0600); both tools refuse otherwise. |
+| Key | One static 32-byte key. File holds 32 raw bytes or 64 hex characters. The file must have no group/other permission bits (0600); both tools refuse otherwise, except a systemd credential (0440 under `/run/credentials/`). |
 | Nonce | 12 bytes: prefix (4) followed by sequence (8), taken from the header. A new prefix on every start keeps nonces unique across restarts (collision odds 2^-32 per restart pair); the counter keeps them unique within a run. |
 | AAD | The 13 header bytes, so version, prefix and sequence are authenticated. |
 | Plaintext | InfluxDB line protocol, newline-terminated lines, at most 1100 bytes. A line never splits across datagrams. A datagram is at most 1129 bytes, under the IPv6 minimum MTU of 1280. |
