@@ -57,6 +57,7 @@ pub const COUNTERS: &[(&str, &str)] = &[
     ("cmqt_flush_send_errors_total", "UDP send failures (the message is requeued)."),
     ("cmqt_flush_amqp_errors_total", "AMQP session failures (reconnect after a pause)."),
     ("cmqt_flush_queue_errors_total", "Publishes into the datagram queue that failed (the request got a 503)."),
+    ("cmqt_flush_sd_requests_total", "Foveal discovery requests answered (authorized)."),
     ("cmqt_flush_http_unauthorized_total", "OTLP/HTTP requests without a valid bearer token."),
     ("cmqt_flush_http_bytes_in_total", "OTLP/HTTP request body bytes after decompression."),
 ];

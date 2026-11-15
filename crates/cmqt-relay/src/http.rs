@@ -21,14 +21,17 @@ const MAX_BODY: u64 = 8 * 1024 * 1024;
 const DEFAULT_QUEUE: &str = "relay_datagrams";
 
 /// Token file: one `name:token` or bare `token` per line; `#` comments.
-pub fn load_tokens(path: &str) -> Result<Vec<String>, String> {
+pub fn load_tokens(path: &str) -> Result<Vec<(String, String)>, String> {
     let s = std::fs::read_to_string(path).map_err(|e| format!("tokens {path}: {e}"))?;
-    let v: Vec<String> = s
+    let v: Vec<(String, String)> = s
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(|l| l.rsplit(':').next().unwrap_or(l).to_string())
-        .filter(|t| t.len() >= 16)
+        .map(|l| match l.rsplit_once(':') {
+            Some((n, t)) => (n.to_string(), t.to_string()),
+            None => (String::new(), l.to_string()),
+        })
+        .filter(|(_, t)| t.len() >= 16)
         .collect();
     if v.is_empty() {
         return Err(format!("tokens {path}: no token of at least 16 characters"));
@@ -40,10 +43,20 @@ fn eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
 }
 
-pub fn authorized(header: Option<&str>, tokens: &[String]) -> bool {
-    let Some(t) = header.and_then(|h| h.strip_prefix("Bearer ")) else { return false };
+/// The device name of the matching token (`Some("")` for a bare token), `None` when none matches.
+pub fn authorized<'a>(header: Option<&str>, tokens: &'a [(String, String)]) -> Option<&'a str> {
+    let t = header?.strip_prefix("Bearer ")?;
     // Check every token (no early exit) so timing does not reveal which matched.
-    tokens.iter().fold(false, |ok, k| eq(k.as_bytes(), t.trim().as_bytes()) | ok)
+    tokens.iter().fold(None, |hit, (n, k)| if eq(k.as_bytes(), t.trim().as_bytes()) { Some(n.as_str()) } else { hit })
+}
+
+/// `/v1/<device>/<subsystem>` or `/sd/v1/<device>/<subsystem>`.
+pub fn sd_path(url: &str) -> Option<(&str, &str)> {
+    let p = url.split('?').next()?;
+    let p = p.strip_prefix("/sd").unwrap_or(p);
+    let mut it = p.strip_prefix("/v1/")?.split('/');
+    let (d, s) = (it.next()?, it.next()?);
+    (it.next().is_none() && !d.is_empty() && !s.is_empty() && d != "metrics").then_some((d, s))
 }
 
 /// Where sealed datagrams go.
@@ -172,8 +185,9 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
         sock.connect(&cfg.target).map_err(|e| format!("target {}: {e}", cfg.target))?;
         Sink::Direct { sock, bucket: Bucket::new(cfg.rate_pps, cfg.burst) }
     };
+    let focus: crate::watch::SharedFocus = Default::default();
     if let Some(w) = cfg.watch.clone() {
-        crate::watch::spawn(w)?;
+        crate::watch::spawn(w, focus.clone())?;
     }
     // Resident memory and its peak into the log every 5 minutes (the host's own tools do not see a site's process).
     std::thread::spawn(|| loop {
@@ -190,10 +204,10 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     let tokens = Arc::new(tokens);
     let mut hs = Vec::new();
     for _ in 0..3 {
-        let (server, state, tokens, c) = (server.clone(), state.clone(), tokens.clone(), counters.clone());
+        let (server, state, tokens, c, focus) = (server.clone(), state.clone(), tokens.clone(), counters.clone(), focus.clone());
         hs.push(std::thread::spawn(move || {
             for rq in server.incoming_requests() {
-                handle(rq, &tokens, &state, &c);
+                handle(rq, &tokens, &state, &c, &focus);
             }
         }));
     }
@@ -203,12 +217,38 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     Err("http server ended".into())
 }
 
-fn handle(mut rq: tiny_http::Request, tokens: &[String], state: &Mutex<State>, c: &Counters) {
+fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex<State>, c: &Counters, focus: &crate::watch::SharedFocus) {
     let hdr = |n: &'static str| rq.headers().iter().find(|h| h.field.equiv(n)).map(|h| h.value.as_str().to_string());
     let auth = hdr("Authorization");
     let gz = hdr("Content-Encoding").is_some_and(|e| e.eq_ignore_ascii_case("gzip"));
     let path_ok = rq.url().split('?').next().is_some_and(|p| p.ends_with("/v1/metrics"));
-    let status = if !authorized(auth.as_deref(), tokens) {
+    let who = authorized(auth.as_deref(), tokens);
+    if who.is_some()
+        && *rq.method() == tiny_http::Method::Get
+        && let Some((device, sub)) = sd_path(rq.url())
+    {
+        let (device, sub) = (device.to_string(), sub.to_string());
+        let (code, body) = if who != Some(device.as_str()) {
+            (403, String::new())
+        } else if !crate::watch::SUBSYSTEMS.contains(&sub.as_str()) {
+            (404, String::new())
+        } else if focus.lock().unwrap_or_else(|e| e.into_inner()).in_focus(std::time::Instant::now(), &device, &sub) {
+            (200, r#"[{"targets":["focus"],"labels":{}}]"#.to_string())
+        } else {
+            (200, "[]".to_string())
+        };
+        c.add("cmqt_flush_sd_requests_total", 1);
+        let mut r = tiny_http::Response::from_string(body).with_status_code(code);
+        if let Ok(h) = tiny_http::Header::from_bytes("Content-Type", "application/json") {
+            r = r.with_header(h);
+        }
+        if let Ok(h) = tiny_http::Header::from_bytes("Cache-Control", "no-store") {
+            r = r.with_header(h);
+        }
+        let _ = rq.respond(r);
+        return;
+    }
+    let status = if who.is_none() {
         c.add("cmqt_flush_http_unauthorized_total", 1);
         401
     } else if *rq.method() != tiny_http::Method::Post || !path_ok {
@@ -281,10 +321,18 @@ mod tests {
     use super::*;
     #[test]
     fn bearer() {
-        let t = vec!["abcdefghijklmnop".to_string()];
-        assert!(authorized(Some("Bearer abcdefghijklmnop"), &t));
-        assert!(!authorized(Some("Bearer abcdefghijklmnoq"), &t));
-        assert!(!authorized(Some("abcdefghijklmnop"), &t));
-        assert!(!authorized(None, &t));
+        let t = vec![("srv".to_string(), "abcdefghijklmnop".to_string())];
+        assert_eq!(authorized(Some("Bearer abcdefghijklmnop"), &t), Some("srv"));
+        assert_eq!(authorized(Some("Bearer abcdefghijklmnoq"), &t), None);
+        assert_eq!(authorized(Some("abcdefghijklmnop"), &t), None);
+        assert_eq!(authorized(None, &t), None);
+    }
+
+    #[test]
+    fn sd_paths() {
+        assert_eq!(sd_path("/v1/srv/cpu"), Some(("srv", "cpu")));
+        assert_eq!(sd_path("/sd/v1/office.mac.vm.srv/disk-io?x=1"), Some(("office.mac.vm.srv", "disk-io")));
+        assert_eq!(sd_path("/v1/metrics"), None);
+        assert_eq!(sd_path("/v1/a/b/c"), None);
     }
 }

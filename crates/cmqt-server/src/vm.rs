@@ -21,6 +21,23 @@ fn instant(agent: &ureq::Agent, base: &str, query: &str) -> Result<Vec<Value>, S
     parse_result(&body)
 }
 
+/// `(device, subsystem)` of every firing `DeviceAttention` alert (the foveal collection's focus).
+pub fn attention(base: &str) -> Result<Vec<(String, String)>, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(10))).build().into();
+    let r = instant(&agent, base, r#"ALERTS{alertname="DeviceAttention",alertstate="firing"}"#)?;
+    Ok(attention_from(&r))
+}
+
+pub fn attention_from(result: &[Value]) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = result
+        .iter()
+        .filter_map(|r| Some((r["metric"]["device"].as_str()?.to_string(), r["metric"]["subsystem"].as_str()?.to_string())))
+        .collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
 pub fn parse_result(body: &Value) -> Result<Vec<Value>, String> {
     if body.get("status").and_then(Value::as_str) != Some("success") {
         return Err("query status is not success".into());
@@ -100,6 +117,12 @@ mod tests {
     fn rejects_error_status() {
         assert!(parse_result(&json!({"status":"error"})).is_err());
         assert!(parse_result(&json!({"status":"success","data":{}})).is_err());
+    }
+
+    #[test]
+    fn reads_attention_pairs() {
+        let r = vec![serde_json::json!({"metric":{"device":"srv","subsystem":"cpu"}}), serde_json::json!({"metric":{"device":"srv","subsystem":"cpu"}}), serde_json::json!({"metric":{"device":"x"}})];
+        assert_eq!(attention_from(&r), vec![("srv".to_string(), "cpu".to_string())]);
     }
 
     #[test]

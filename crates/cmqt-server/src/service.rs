@@ -95,6 +95,14 @@ impl Link {
         }
     }
 
+    /// A live (not retained) QoS 0 message: the focus report; a late joiner must not see an old one.
+    fn publish_live(&self, rel_topic: &str, payload: Vec<u8>) {
+        let topic = format!("{}{}", self.tree.prefix(), rel_topic);
+        if let Err(e) = self.client.try_publish(topic, QoS::AtMostOnce, false, payload) {
+            eprintln!("cmqt-server: {} focus publish dropped: {e}", self.tree.name());
+        }
+    }
+
     fn put<T: serde::Serialize>(&mut self, rel_topic: &str, value: &T, fingerprint: &str) {
         if self.tracker.should_publish(rel_topic, fingerprint)
             && let Ok(p) = serde_json::to_vec(value)
@@ -223,9 +231,24 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .map_err(|e| e.to_string())?;
+    // The foveal focus (contract section 8): every 15 s the (device, subsystem) pairs whose
+    // DeviceAttention alert is firing, as a live message on `internal/_focus`; always sent, so
+    // it is also the heartbeat the relay needs (no report for 120 s clears everything).
+    let mut focus = tokio::time::interval(Duration::from_secs(15));
+    focus.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             _ = tick.tick() => {}
+            _ = focus.tick() => {
+                let url = cfg.victoria_url.clone();
+                if let Ok(Ok(pairs)) = tokio::task::spawn_blocking(move || vm::attention(&url)).await
+                    && let Some(link) = links.iter().find(|l| l.tree.name() == "internal")
+                    && let Ok(p) = serde_json::to_vec(&serde_json::json!({"t": now_s(), "firing": pairs}))
+                {
+                    link.publish_live("_focus", p);
+                }
+                continue;
+            }
             _ = tokio::signal::ctrl_c() => break,
             _ = term.recv() => break,
         }

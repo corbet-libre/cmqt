@@ -27,6 +27,38 @@ fn default_silence() -> u64 {
     300
 }
 
+/// Subsystems the foveal collection knows (the `subsystem` label of the attention rules).
+pub const SUBSYSTEMS: &[&str] = &["cpu", "memory", "disk-io", "disk-space", "network"];
+const HOLD: Duration = Duration::from_secs(60);
+const STALE: Duration = Duration::from_secs(120);
+
+/// Focus state in RAM (contract section 8): a pair is in focus for 60 s after the last report
+/// that listed it; with no report at all for 120 s nothing is in focus.
+#[derive(Default)]
+pub struct Focus {
+    last_report: Option<Instant>,
+    firing: std::collections::HashMap<(String, String), Instant>,
+}
+impl Focus {
+    pub fn report(&mut self, now: Instant, pairs: Vec<(String, String)>) {
+        self.last_report = Some(now);
+        for p in pairs {
+            self.firing.insert(p, now);
+        }
+        self.firing.retain(|_, t| now.duration_since(*t) < HOLD * 2);
+    }
+    pub fn in_focus(&self, now: Instant, device: &str, subsystem: &str) -> bool {
+        self.last_report.is_some_and(|r| now.duration_since(r) < STALE)
+            && self.firing.get(&(device.to_string(), subsystem.to_string())).is_some_and(|t| now.duration_since(*t) < HOLD)
+    }
+}
+pub type SharedFocus = Arc<Mutex<Focus>>;
+
+fn parse_focus(payload: &[u8]) -> Option<Vec<(String, String)>> {
+    let v: serde_json::Value = serde_json::from_slice(payload).ok()?;
+    Some(v["firing"].as_array()?.iter().filter_map(|p| Some((p[0].as_str()?.to_string(), p[1].as_str()?.to_string()))).collect())
+}
+
 /// Alert state machine: pure, so it is testable. `tick` returns the message to send, if any.
 pub struct Silence {
     limit: Duration,
@@ -63,12 +95,13 @@ fn notify(cfg: &Config, topic: &str, title: &str, body: &str) {
 }
 
 /// Spawn the watcher threads. Errors (missing files) are returned; later failures are retried.
-pub fn spawn(cfg: Config) -> Result<(), String> {
+pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let pw = read_line(&cfg.password_file)?;
     let topic = read_line(&cfg.ntfy_topic_file)?;
     let last = Arc::new(Mutex::new(Instant::now()));
     let (l2, c2) = (last.clone(), cfg.clone());
+    let focus = focus.clone();
     std::thread::spawn(move || {
         loop {
             let mut o = MqttOptions::new(format!("cmqt-watch-{}", std::process::id()), &c2.mqtt_url, 443);
@@ -84,6 +117,11 @@ pub fn spawn(cfg: Config) -> Result<(), String> {
                     // Live forwards have retain = false; the retained set replayed on subscribe is not news.
                     Ok(Event::Incoming(Packet::Publish(p))) if !p.retain => {
                         *l2.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+                        if p.topic == "internal/_focus"
+                            && let Some(pairs) = parse_focus(&p.payload)
+                        {
+                            focus.lock().unwrap_or_else(|e| e.into_inner()).report(Instant::now(), pairs);
+                        }
                     }
                     Ok(_) => {}
                     Err(e) => {
@@ -113,6 +151,23 @@ pub fn spawn(cfg: Config) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn focus_holds_60s_and_clears_when_reports_stop() {
+        let t0 = Instant::now();
+        let mut f = Focus::default();
+        let s = |n| Duration::from_secs(n);
+        assert!(!f.in_focus(t0, "srv", "cpu")); // never seen
+        f.report(t0, vec![("srv".into(), "cpu".into())]);
+        assert!(f.in_focus(t0 + s(1), "srv", "cpu"));
+        assert!(!f.in_focus(t0 + s(1), "srv", "memory"));
+        f.report(t0 + s(15), vec![]); // heartbeat without the pair
+        assert!(f.in_focus(t0 + s(59), "srv", "cpu"));
+        assert!(!f.in_focus(t0 + s(61), "srv", "cpu")); // 60 s after the last listing
+        f.report(t0 + s(30), vec![("srv".into(), "cpu".into())]);
+        assert!(!f.in_focus(t0 + s(151), "srv", "cpu")); // no report for 120 s: stale
+        assert_eq!(parse_focus(br#"{"t":1,"firing":[["srv","cpu"],["a","b"]]}"#).unwrap().len(), 2);
+    }
+
     #[test]
     fn one_alert_one_recovery_no_repeats() {
         let mut s = Silence::new(Duration::from_secs(300));
