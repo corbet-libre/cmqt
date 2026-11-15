@@ -18,6 +18,7 @@ use tokio::runtime::{Handle, Runtime};
 
 /// Largest body after decompression (an OTLP batch is far below this).
 const MAX_BODY: u64 = 8 * 1024 * 1024;
+static CACHE: std::sync::OnceLock<(std::sync::Mutex<crate::cache::Cache>, String)> = std::sync::OnceLock::new();
 static STATIC_DIR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 const DEFAULT_QUEUE: &str = "relay_datagrams";
 
@@ -189,6 +190,10 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     if let Some(d) = cfg.static_dir.clone() {
         let _ = STATIC_DIR.set(d);
     }
+    if cfg.cache_mib > 0 {
+        let pw = std::fs::read_to_string(cfg.screen_password_file.as_deref().ok_or("screen_password_file missing")?).map_err(|e| e.to_string())?;
+        let _ = CACHE.set((Mutex::new(crate::cache::Cache::new(cfg.cache_mib << 20)), pw.trim().to_string()));
+    }
     let focus: crate::watch::SharedFocus = Default::default();
     if let Some(w) = cfg.watch.clone() {
         crate::watch::spawn(w, focus.clone())?;
@@ -197,7 +202,8 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     std::thread::spawn(|| loop {
         if let Ok(st) = std::fs::read_to_string("/proc/self/status") {
             let f = |k: &str| st.lines().find(|l| l.starts_with(k)).unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
-            eprintln!("cmqt flush: mem {} | {}", f("VmRSS:"), f("VmHWM:"));
+            let ch = CACHE.get().map(|(c, _)| { let g = c.lock().unwrap_or_else(|e| e.into_inner()); format!(" | cache {} B, {} series, oldest {:?} ms, evicted {}", g.bytes(), g.series_count(), g.oldest_ms(), g.evicted_blocks) }).unwrap_or_default();
+            eprintln!("cmqt flush: mem {} | {}{ch}", f("VmRSS:"), f("VmHWM:"));
         }
         std::thread::sleep(Duration::from_secs(300));
     });
@@ -248,6 +254,18 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
         let _ = rq.respond(r);
         return;
     }
+    if *rq.method() == tiny_http::Method::Get
+        && rq.url().contains("/api/v1/query_range")
+        && let Some((cache, pw)) = CACHE.get()
+    {
+        let (code, body) = query_range(rq.url(), auth.as_deref(), cache, pw);
+        let mut r = tiny_http::Response::from_string(body).with_status_code(code);
+        if let Ok(h) = tiny_http::Header::from_bytes("Content-Type", "application/json") {
+            r = r.with_header(h);
+        }
+        let _ = rq.respond(r);
+        return;
+    }
     let who = authorized(auth.as_deref(), tokens);
     if who.is_some()
         && *rq.method() == tiny_http::Method::Get
@@ -290,7 +308,7 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
             400
         } else {
             c.add("cmqt_flush_http_bytes_in_total", body.len() as u64);
-            match prepare_zstd(&body, c) {
+            match prepare_zstd(&body, c, CACHE.get().map(|(c, _)| c)) {
                 Err(e) => {
                     eprintln!("cmqt flush: http: dropping request: {e}");
                     c.add("cmqt_flush_bad_messages_total", 1);
@@ -301,6 +319,57 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
         }
     };
     let _ = rq.respond(tiny_http::Response::empty(status));
+}
+
+fn qparam(url: &str, k: &str) -> Option<String> {
+    let q = url.split_once('?')?.1;
+    q.split('&').find_map(|p| {
+        let (a, b) = p.split_once('=')?;
+        (a == k).then(|| pct_decode(b))
+    })
+}
+fn pct_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let (mut o, mut i) = (Vec::new(), 0);
+    while i < b.len() {
+        match b[i] {
+            b'%' if i + 2 < b.len() => {
+                if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) { o.push(v); i += 3; continue; }
+                o.push(b'%');
+            }
+            b'+' => o.push(b' '),
+            c => o.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&o).into_owned()
+}
+fn ts_ms(v: &str) -> Option<i64> {
+    v.parse::<f64>().ok().map(|f| (f * 1000.0) as i64)
+}
+
+/// Prometheus `query_range` subset for plain selectors; HTTP Basic user `screen`.
+fn query_range(url: &str, auth: Option<&str>, cache: &Mutex<crate::cache::Cache>, pw: &str) -> (u16, String) {
+    use base64::Engine;
+    let ok = auth
+        .and_then(|a| a.strip_prefix("Basic "))
+        .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b.trim()).ok())
+        .is_some_and(|d| eq(&d, format!("screen:{pw}").as_bytes()));
+    if !ok {
+        return (401, String::new());
+    }
+    let err = |m: &str| (400, format!(r#"{{"status":"error","errorType":"bad_data","error":"{m}"}}"#));
+    let Some(m) = qparam(url, "query").and_then(|q| crate::cache::parse_selector(&q)) else { return err("only plain selectors") };
+    let (Some(start), Some(end), Some(step)) = (qparam(url, "start").and_then(|v| ts_ms(&v)), qparam(url, "end").and_then(|v| ts_ms(&v)), qparam(url, "step").and_then(|v| v.parse::<f64>().ok().map(|f| (f * 1000.0) as i64))) else { return err("start, end, step") };
+    if step <= 0 || end < start || (end - start) / step > 11_000 {
+        return err("bad range");
+    }
+    let r = cache.lock().unwrap_or_else(|e| e.into_inner()).range(&m, start, end, step);
+    let result: Vec<serde_json::Value> = r
+        .into_iter()
+        .map(|(l, p)| serde_json::json!({"metric": l, "values": p.into_iter().map(|(t, v)| serde_json::json!([t as f64 / 1000.0, v.to_string()])).collect::<Vec<_>>()}))
+        .collect();
+    (200, serde_json::json!({"status":"success","data":{"resultType":"matrix","result":result}}).to_string())
 }
 
 /// Seal and hand over, in order: sealing and publishing share one lock so the queue keeps the

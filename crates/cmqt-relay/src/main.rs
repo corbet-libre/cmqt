@@ -1,5 +1,6 @@
 //! `cmqt flush` / `cmqt unseal`: one-way sealed-UDP relay of OTLP metrics.
 
+mod cache;
 mod flush;
 mod http;
 mod watch;
