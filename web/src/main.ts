@@ -22,7 +22,31 @@ const q = new URLSearchParams(location.search);
 const fromHost = parseHost(location.hostname);
 const host: HostInfo | null =
   fromHost ?? (q.get("screen") ? { screen: q.get("screen") as string, tld: q.get("tld") === "ch" ? "ch" : "internal" } : null);
-const brokerUrl = q.get("broker") ?? `wss://${location.host}`;
+// The relay serves both trees on one broker; the tree is the topic prefix.
+const RELAY_URL = "wss://richc.alwaysdata.net/mqtt";
+const brokerUrl = q.get("broker") ?? RELAY_URL;
+const tree = host?.tld === "ch" ? "public" : "internal";
+
+// The public tree is anonymous. The internal tree needs the screen login,
+// asked once per browser session and never put in the URL or the page.
+function credentials(): { username?: string; password?: string } {
+  if (tree === "public") return {};
+  try {
+    let u = sessionStorage.getItem("cmqt-user");
+    let p = sessionStorage.getItem("cmqt-pass");
+    if (!u || !p) {
+      u = window.prompt("Screen user", "screen");
+      p = u ? window.prompt("Password") : null;
+      if (u && p) {
+        sessionStorage.setItem("cmqt-user", u);
+        sessionStorage.setItem("cmqt-pass", p);
+      }
+    }
+    return u && p ? { username: u, password: p } : {};
+  } catch {
+    return {};
+  }
+}
 
 let online: Online | null = null;
 let onlineAt: number | null = null; // performance.now() at the last _online
@@ -129,10 +153,10 @@ function main(): void {
     return;
   }
   showOverlay("observability unreachable");
-  const client = mqtt.connect(brokerUrl, { protocolVersion: 5, reconnectPeriod: 2000, connectTimeout: 8000, clean: true });
+  const client = mqtt.connect(brokerUrl, { protocolVersion: 5, reconnectPeriod: 2000, connectTimeout: 8000, clean: true, ...credentials() });
   client.on("connect", () => {
     connected = true;
-    client.subscribe([`${host.screen}/#`, "_online"], { qos: 1 });
+    client.subscribe([`${tree}/${host.screen}/#`, `${tree}/_online`], { qos: 1 });
     evaluate();
   });
   const down = (): void => {
@@ -150,14 +174,14 @@ function main(): void {
     } catch {
       return;
     }
-    if (topic === "_online") {
+    if (topic === `${tree}/_online`) {
       online = data as Online;
       onlineAt = performance.now();
-    } else if (topic === `${host.screen}/_layout`) {
+    } else if (topic === `${tree}/${host.screen}/_layout`) {
       layout = data as Layout;
       renderLayout(layout, host);
-    } else if (topic.startsWith(`${host.screen}/`)) {
-      const id = topic.slice(host.screen.length + 1);
+    } else if (topic.startsWith(`${tree}/${host.screen}/`)) {
+      const id = topic.slice(tree.length + host.screen.length + 2);
       tiles.set(id, data as TileMsg);
       paintTile(id);
       paintNodeTile(id, data as TileMsg);
