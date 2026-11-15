@@ -28,6 +28,9 @@ pub struct Config {
     /// Evaluation interval; equals vmalert's evaluation interval.
     #[serde(default = "default_interval")]
     pub interval_s: u64,
+    /// Period of the `_online` heartbeat in seconds (default 120: the relay's box-silence watcher waits 5 minutes). Its message expiry is 3 x this.
+    #[serde(default = "default_online_every")]
+    pub online_every_s: u64,
     /// cprm's `prometheus/manifest.json`; when set, its generation must match
     /// the dashboards' (contract §1).
     #[serde(default)]
@@ -39,6 +42,9 @@ fn default_host() -> String {
 }
 fn default_port() -> u16 {
     1883
+}
+fn default_online_every() -> u64 {
+    120
 }
 fn default_interval() -> u64 {
     30
@@ -54,6 +60,9 @@ impl Config {
         let c: Config = toml::from_str(text).map_err(|e| e.to_string())?;
         if c.interval_s == 0 {
             return Err("interval_s must be > 0".into());
+        }
+        if c.online_every_s == 0 {
+            return Err("online_every_s must be > 0".into());
         }
         Ok(c)
     }

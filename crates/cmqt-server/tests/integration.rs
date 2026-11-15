@@ -291,7 +291,7 @@ impl Server {
         std::fs::write(
             &cfg,
             format!(
-                "dashboards_dir = '{}'\nvictoria_url = 'http://127.0.0.1:{}'\nbroker_port = {broker_port}\ninterval_s = {interval_s}\n{extra}\n",
+                "dashboards_dir = '{}'\nvictoria_url = 'http://127.0.0.1:{}'\nbroker_port = {broker_port}\ninterval_s = {interval_s}\nonline_every_s = {interval_s}\n{extra}\n",
                 fixtures.display(),
                 vm.port
             ),
@@ -576,15 +576,12 @@ async fn last_will_on_kill_and_expiry() {
             .is_some_and(|m| m.payload["state"] == "offline")
     })
     .await;
-    w.wait_for("public will", |w| {
-        w.last("public/_online")
-            .is_some_and(|m| m.payload["state"] == "offline")
-    })
-    .await;
     // retained will for a late subscriber
-    let late = Watcher::new(broker.port, "public/_online").await;
+    // (one connection carries both trees and a connection has one will: the INTERNAL tree is taken down by the broker; the public `_online` is not rewritten
+    // and goes away by its expiry, below; the relay's box-silence watcher marks the public tree)
+    let late = Watcher::new(broker.port, "internal/_online").await;
     late.wait_for("retained will", |w| {
-        w.last("public/_online")
+        w.last("internal/_online")
             .is_some_and(|m| m.payload["state"] == "offline" && m.retain)
     })
     .await;
