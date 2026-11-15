@@ -52,7 +52,10 @@ fn connect(cfg: &Config) -> Vec<Link> {
         opts.set_keep_alive(Duration::from_secs(120));
         if let Some(url) = &cfg.broker_url {
             opts = MqttOptions::new(opts.client_id(), url, 443);
-            opts.set_keep_alive(Duration::from_secs(120));
+            // Measured 2026-11-15: alwaysdata's proxy closes a WebSocket after 60 s without traffic
+            // (keep-alive 120 and 60 both dropped every ~61 s and republished everything each time,
+            // about 0.7 MB per hour); 30 s holds the connection (idle cost about 0.4 MB per day).
+            opts.set_keep_alive(Duration::from_secs(30));
             opts.set_transport(rumqttc::Transport::wss_with_default_config());
         }
         if let (Some(u), Some(f)) = (&cfg.broker_user, &cfg.broker_password_file) {
