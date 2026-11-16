@@ -182,8 +182,8 @@ fn check_generation(cfg: &Config, board: &Board) -> Gen {
 }
 
 /// Why `_online` is degraded this evaluation, if it is (`cmqt::degraded`): VictoriaMetrics did not answer (`query`), it answers but holds
-/// no recorded tile value although the board has tiles (`rules`: vmalert does not evaluate), or the configured pipeline check returned
-/// a series (`check`). A dead VictoriaMetrics, vmalert or Alertmanager was silent before: `_online` said `online` all the same and the
+/// no recorded tile value although the board has tiles (`rules`: vmalert does not evaluate), the configured pipeline check failed while
+/// the tile queries succeeded (`check-error`: a bad expression, not a dead VictoriaMetrics), or it returned a series (`check`). A dead VictoriaMetrics, vmalert or Alertmanager was silent before: `_online` said `online` all the same and the
 /// relay's watcher, the one alarm that does not run on the box, never heard of it (bug hunt 2026-11-16, finding 3).
 pub fn degraded_reason(
     board: &Board,
@@ -196,8 +196,9 @@ pub fn degraded_reason(
         .iter()
         .any(|s| !s.greyed && !s.tiles.is_empty());
     match (vmres, check) {
-        (None, _) | (_, Some(Err(_))) => Some(cmqt::degraded::QUERY),
+        (None, _) => Some(cmqt::degraded::QUERY),
         (Some((samples, _)), _) if has_tiles && samples.is_empty() => Some(cmqt::degraded::RULES),
+        (_, Some(Err(_))) => Some(cmqt::degraded::CHECK_ERROR),
         (_, Some(Ok(true))) => Some(cmqt::degraded::CHECK),
         _ => None,
     }
@@ -445,9 +446,10 @@ mod tests {
         s.insert("srv", "ram", 0.5);
         let ok = (s, engine::Firing::default());
         assert_eq!(degraded_reason(&b, None, None), Some("query"));
+        // a failing check is its own reason, not "VictoriaMetrics does not answer" (review 2026-11-16, finding 7)
         assert_eq!(
             degraded_reason(&b, Some(&ok), Some(Err("x".into()))),
-            Some("query")
+            Some("check-error")
         );
         assert_eq!(degraded_reason(&b, Some(&empty), None), Some("rules"));
         assert_eq!(

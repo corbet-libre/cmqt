@@ -164,6 +164,9 @@ pub mod degraded {
     pub const RULES: &str = "rules";
     /// The configured pipeline check (cmqt-server `degraded_query`, e.g. Alertmanager down or vmalert send errors) returned a series.
     pub const CHECK: &str = "check";
+    /// The configured pipeline check itself failed (a bad expression, or VictoriaMetrics refused it) while the tile queries succeeded:
+    /// not "VictoriaMetrics does not answer", but the check is blind.
+    pub const CHECK_ERROR: &str = "check-error";
 }
 
 /// `_online` payload. The last will carries only `state`.

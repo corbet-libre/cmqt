@@ -29,7 +29,23 @@
           },
           "metric": "corbet:tile:value"
         },
-        "scope": {},
+        "scope": {
+          "host_name": [
+            "cld-0",
+            "cld-1",
+            "cld-2",
+            "cld-3",
+            "cld-4",
+            "cld-5",
+            "cld-6",
+            "fra-0",
+            "fra-1",
+            "fra-2",
+            "srv",
+            "archlxc",
+            "vultr"
+          ]
+        },
         "tile": "topology",
         "topology": {
           "brackets": [

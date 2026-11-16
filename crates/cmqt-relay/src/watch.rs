@@ -173,6 +173,9 @@ pub fn degraded_text(reason: &str) -> &'static str {
         "check" => {
             "the box's pipeline check fires (Alertmanager down or vmalert cannot send alerts)"
         }
+        "check-error" => {
+            "the box's pipeline check (degraded_query) itself fails: a bad expression, or VictoriaMetrics refuses it"
+        }
         _ => "the board server reports a broken pipeline",
     }
 }
@@ -464,5 +467,6 @@ mod tests {
         note_online(&d, t0 + s(210), b"not json");
         assert!(d.lock().unwrap().is_none());
         assert!(degraded_text("query").contains("VictoriaMetrics"));
+        assert!(degraded_text("check-error").contains("degraded_query"));
     }
 }

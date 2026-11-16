@@ -157,6 +157,13 @@ impl Vm {
                 let s = st.lock().unwrap();
                 let (status, body) = if s.fail {
                     ("500 Internal Server Error", "{}".to_string())
+                } else if line.contains("BROKEN") {
+                    // what VictoriaMetrics answers to a query it cannot parse
+                    (
+                        "422 Unprocessable Entity",
+                        json!({"status":"error","errorType":"bad_data","error":"cannot parse"})
+                            .to_string(),
+                    )
                 } else if line.contains("ALERTS") {
                     let r: Vec<Value> = s
                         .firing
@@ -843,4 +850,26 @@ async fn public_listener_is_read_only() {
             .iter()
             .all(|m| m.topic != "public/evil" && !m.payload.to_string().contains("HACKED"))
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failing_pipeline_check_is_its_own_reason() {
+    // review 2026-11-16, finding 7: a bad degraded_query is not "VictoriaMetrics does not answer"
+    let dir = scratch("checkerr");
+    let (p, mp) = (free_port(), free_port());
+    let broker = Broker::start(&dir, p, mp);
+    let vm = Vm::start();
+    let _server = Server::start(&dir, broker.port, &vm, 1, "degraded_query = 'BROKEN('");
+    let w = Watcher::new(broker.port, "internal/#").await;
+    w.wait_for("check-error", |w| {
+        w.last("internal/_online")
+            .is_some_and(|m| m.payload["degraded"] == "check-error")
+    })
+    .await;
+    // the tiles themselves are fine: VictoriaMetrics answers
+    w.wait_for("ok tile", |w| {
+        w.last("internal/srv/ram")
+            .is_some_and(|m| m.payload["s"] == "ok")
+    })
+    .await;
 }

@@ -66,8 +66,12 @@ impl Alert {
 impl Firing {
     /// `alertname` in `names` (or `names` holds `*`) AND every scope label matches (a scope value
     /// matches when the alert's label equals any of the listed values). Attention rules never match.
+    /// `*` with an empty scope matches nothing: it would stand for every alert of the fleet.
     pub fn matches(&self, names: &[String], scope: &BTreeMap<String, Vec<String>>) -> bool {
         let any = names.iter().any(|n| n == ANY_ALERT);
+        if any && scope.is_empty() {
+            return false;
+        }
         self.alerts.iter().any(|a| {
             !a.is_attention()
                 && a.labels
@@ -570,6 +574,30 @@ mod tests {
         let topo = json!({"nodes":[{"device":"cld-1"}]});
         let t = topology_tiles(&topo, Some(&firing(&[attention])), &|_| false, 5);
         assert_eq!(t[0].1.s, TileState::Ok);
+    }
+
+    #[test]
+    fn star_with_an_empty_scope_matches_nothing() {
+        // review 2026-11-16, finding 5: `*` and `scope: {}` stood for every alert of the fleet (the public topology stayed at issue)
+        let sc = screen(
+            "topology",
+            "topology",
+            false,
+            vec![tile("topology", &["*"], &[], None)],
+        );
+        let f = firing(&[Alert::new("DeviceDown", &[("host_name", "archlxc")])]);
+        assert_eq!(calc(Tree::Public, &sc, None, Some(&f)).s, TileState::Ok);
+        let named = screen(
+            "x",
+            "site",
+            false,
+            vec![tile("x", &["DeviceDown"], &[], None)],
+        );
+        assert_eq!(
+            calc(Tree::Internal, &named, None, Some(&f)).s,
+            TileState::Issue,
+            "a named list keeps its meaning"
+        );
     }
 
     #[test]

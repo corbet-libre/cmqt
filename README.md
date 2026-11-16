@@ -42,7 +42,7 @@ On a generation mismatch (dashboards vs `prometheus_manifest`) `_online` says
 `_online` carries `degraded` while the box publishes but cannot tell the truth (`cmqt::degraded`): `query` (VictoriaMetrics does
 not answer), `rules` (it answers but holds no `corbet:tile:value` although the board has tiles: vmalert does not evaluate), `check`
 (the optional `degraded_query` returned a series: a check of the alert path itself, such as Alertmanager down or vmalert send
-errors). `state` stays `online`: screens stay live and their tiles carry their own `unknown`. A change of `degraded` publishes
+errors), `check-error` (that query itself failed while the tile queries succeeded: a bad expression, the check is blind). `state` stays `online`: screens stay live and their tiles carry their own `unknown`. A change of `degraded` publishes
 `_online` at once. The relay's box-silence watcher (`cmqt flush`) treats a box degraded for `silence_s` like a silent one: one ntfy
 message, one when it is back.
 
