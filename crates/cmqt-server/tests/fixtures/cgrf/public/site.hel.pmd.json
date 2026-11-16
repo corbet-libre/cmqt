@@ -1,7 +1,7 @@
 {
   "corbet": {
     "door": "public",
-    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "generation": "5a726d636151f70ebfd3f97dd554957f630bd417265e4aa43345335c84d68f8d",
     "greyed": false,
     "kind": "site",
     "schema": "corbet.obs.dashboard/1",
@@ -23,14 +23,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "cld-0",
         "pages": false,
@@ -90,14 +83,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "cld-1",
         "pages": false,
@@ -157,14 +143,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "cld-2",
         "pages": false,
@@ -224,14 +203,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "cld-3",
         "pages": false,
@@ -291,14 +263,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "cld-4",
         "pages": false,
@@ -358,14 +323,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "cld-5",
         "pages": false,
@@ -425,14 +383,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "cld-6",
         "pages": false,

@@ -1,7 +1,7 @@
 {
   "corbet": {
     "door": "public",
-    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "generation": "5a726d636151f70ebfd3f97dd554957f630bd417265e4aa43345335c84d68f8d",
     "greyed": false,
     "kind": "device",
     "schema": "corbet.obs.dashboard/1",
@@ -28,8 +28,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceDown",
-          "DeviceHeartbeatLate"
+          "DeviceDown"
         ],
         "pages": true,
         "record": {
@@ -82,6 +81,59 @@
     {
       "corbet": {
         "alerts": [
+          "DeviceHeartbeatLate"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "srv",
+            "tile": "jobs"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "srv"
+        },
+        "tile": "jobs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "corbet:tile:value{screen=\"srv\",tile=\"jobs\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Jobs",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
           "DeviceCpuSaturated"
         ],
         "pages": true,
@@ -109,11 +161,11 @@
               },
               {
                 "color": "yellow",
-                "value": 20.0
+                "value": 72.0
               },
               {
                 "color": "red",
-                "value": 50.0
+                "value": 90.0
               }
             ]
           },
@@ -123,10 +175,10 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 8,
+        "x": 16,
         "y": 0
       },
-      "id": 2,
+      "id": 3,
       "targets": [
         {
           "expr": "corbet:tile:value{screen=\"srv\",tile=\"cpu\"}",
@@ -166,11 +218,11 @@
               },
               {
                 "color": "yellow",
-                "value": 80.0
+                "value": 72.0
               },
               {
                 "color": "red",
-                "value": 92.0
+                "value": 90.0
               }
             ]
           },
@@ -180,10 +232,10 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 16,
-        "y": 0
+        "x": 0,
+        "y": 5
       },
-      "id": 3,
+      "id": 4,
       "targets": [
         {
           "expr": "corbet:tile:value{screen=\"srv\",tile=\"ram\"}",
@@ -223,11 +275,11 @@
               },
               {
                 "color": "yellow",
-                "value": 80.0
+                "value": 93.75
               },
               {
                 "color": "red",
-                "value": 90.0
+                "value": 95.0
               }
             ]
           },
@@ -237,10 +289,10 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 0,
+        "x": 8,
         "y": 5
       },
-      "id": 4,
+      "id": 5,
       "targets": [
         {
           "expr": "corbet:tile:value{screen=\"srv\",tile=\"disk\"}",
@@ -280,11 +332,11 @@
               },
               {
                 "color": "yellow",
-                "value": 20.0
+                "value": 32.0
               },
               {
                 "color": "red",
-                "value": 50.0
+                "value": 40.0
               }
             ]
           },
@@ -294,10 +346,10 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 8,
+        "x": 16,
         "y": 5
       },
-      "id": 5,
+      "id": 6,
       "targets": [
         {
           "expr": "corbet:tile:value{screen=\"srv\",tile=\"io\"}",
@@ -337,7 +389,7 @@
               },
               {
                 "color": "yellow",
-                "value": 0.1
+                "value": 0.8
               },
               {
                 "color": "red",
@@ -345,16 +397,16 @@
               }
             ]
           },
-          "unit": "ops"
+          "unit": "percent"
         }
       },
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 16,
-        "y": 5
+        "x": 0,
+        "y": 10
       },
-      "id": 6,
+      "id": 7,
       "targets": [
         {
           "expr": "corbet:tile:value{screen=\"srv\",tile=\"net\"}",

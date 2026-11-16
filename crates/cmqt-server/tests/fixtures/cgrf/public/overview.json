@@ -1,7 +1,7 @@
 {
   "corbet": {
     "door": "public",
-    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "generation": "5a726d636151f70ebfd3f97dd554957f630bd417265e4aa43345335c84d68f8d",
     "greyed": false,
     "kind": "overview",
     "schema": "corbet.obs.dashboard/1",
@@ -30,8 +30,7 @@
         "scope": {
           "host_name": [
             "e2-micro"
-          ],
-          "site": "0x3D"
+          ]
         },
         "tile": "chs_gcp"
       },
@@ -73,14 +72,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.fra.brh",
         "pages": false,
@@ -98,8 +90,7 @@
             "fra-2",
             "fra-3",
             "fra-4"
-          ],
-          "site": "0x20"
+          ]
         },
         "tile": "fra_brh"
       },
@@ -147,14 +138,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.fra.vtr",
         "pages": false,
@@ -168,8 +152,7 @@
         "scope": {
           "host_name": [
             "vultr"
-          ],
-          "site": "0x21"
+          ]
         },
         "tile": "fra_vtr"
       },
@@ -217,14 +200,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.hel.pmd",
         "pages": false,
@@ -244,8 +220,7 @@
             "cld-4",
             "cld-5",
             "cld-6"
-          ],
-          "site": "0x22"
+          ]
         },
         "tile": "hel_pmd"
       },
@@ -293,14 +268,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.home",
         "pages": false,
@@ -315,8 +283,7 @@
           "host_name": [
             "srv",
             "elitebook"
-          ],
-          "site": "0x2A"
+          ]
         },
         "tile": "home"
       },

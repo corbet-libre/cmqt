@@ -23,6 +23,10 @@ impl Samples {
             .get(&(screen.to_string(), tile.to_string()))
             .copied()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
 }
 
 /// One firing alert with all its labels (`alertname` included).
@@ -48,23 +52,38 @@ pub struct Firing {
     pub alerts: Vec<Alert>,
 }
 
+/// `alerts` entry matching any alert name (cgrf's aggregate tiles: "does a device have an issue", the ported rules included).
+pub const ANY_ALERT: &str = "*";
+
+impl Alert {
+    /// An attention rule (cprm `rules/attention.yml`, `kind="attention"`): the early warning that steers the foveal collection.
+    /// It is never an issue: not on a tile, not on a topology node.
+    pub fn is_attention(&self) -> bool {
+        self.labels.get("kind").is_some_and(|k| k == "attention")
+    }
+}
+
 impl Firing {
-    /// `alertname` in `names` AND every scope label matches (a scope value
-    /// matches when the alert's label equals any of the listed values).
+    /// `alertname` in `names` (or `names` holds `*`) AND every scope label matches (a scope value
+    /// matches when the alert's label equals any of the listed values). Attention rules never match.
     pub fn matches(&self, names: &[String], scope: &BTreeMap<String, Vec<String>>) -> bool {
+        let any = names.iter().any(|n| n == ANY_ALERT);
         self.alerts.iter().any(|a| {
-            a.labels.get("alertname").is_some_and(|n| names.contains(n))
+            !a.is_attention()
+                && a.labels
+                    .get("alertname")
+                    .is_some_and(|n| any || names.contains(n))
                 && scope
                     .iter()
                     .all(|(k, vals)| a.labels.get(k).is_some_and(|v| vals.contains(v)))
         })
     }
 
-    /// Any firing alert whose `host_name` is `device` (topology nodes).
+    /// Any firing alert but an attention rule whose `host_name` is `device` (topology nodes).
     pub fn device_has_alert(&self, device: &str) -> bool {
         self.alerts
             .iter()
-            .any(|a| a.labels.get("host_name").is_some_and(|h| h == device))
+            .any(|a| !a.is_attention() && a.labels.get("host_name").is_some_and(|h| h == device))
     }
 }
 
@@ -495,6 +514,62 @@ mod tests {
             go(Alert::new("DeviceDiskFull", &[("host_name", "srv")])),
             TileState::Ok
         );
+    }
+
+    #[test]
+    fn attention_is_never_an_issue_and_star_matches_any_other_alert() {
+        // bug hunt 2026-11-16, finding 7: the 80 percent early warning made topology nodes and aggregate tiles look broken
+        let ov = screen(
+            "site.x",
+            "site",
+            false,
+            vec![tile("cld_1", &["*"], &[("host_name", &["cld-1"])], None)],
+        );
+        let go = |a: Alert| calc(Tree::Internal, &ov, None, Some(&firing(&[a]))).s;
+        let attention = Alert::new(
+            "DeviceAttention",
+            &[("host_name", "cld-1"), ("kind", "attention")],
+        );
+        assert_eq!(go(attention.clone()), TileState::Ok);
+        // a rule ported from Vultr, once it carries host_name: an issue of the device
+        assert_eq!(
+            go(Alert::new(
+                "HostSwapNearlyExhausted",
+                &[("host_name", "cld-1")]
+            )),
+            TileState::Issue
+        );
+        assert_eq!(
+            go(Alert::new(
+                "HostSwapNearlyExhausted",
+                &[("host_name", "cld-2")]
+            )),
+            TileState::Ok
+        );
+        // an explicit list still names its alerts
+        let dev = screen(
+            "cld-1",
+            "device",
+            false,
+            vec![tile(
+                "ram",
+                &["DeviceMemoryLow"],
+                &[("host_name", &["cld-1"])],
+                None,
+            )],
+        );
+        let sm = samples("cld-1", "ram", 0.5);
+        let f = firing(&[Alert::new(
+            "HostSwapNearlyExhausted",
+            &[("host_name", "cld-1")],
+        )]);
+        assert_eq!(
+            calc(Tree::Internal, &dev, Some(&sm), Some(&f)).s,
+            TileState::Ok
+        );
+        let topo = json!({"nodes":[{"device":"cld-1"}]});
+        let t = topology_tiles(&topo, Some(&firing(&[attention])), &|_| false, 5);
+        assert_eq!(t[0].1.s, TileState::Ok);
     }
 
     #[test]

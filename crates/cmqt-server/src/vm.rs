@@ -106,6 +106,15 @@ pub fn fetch(base: &str) -> Result<(Samples, Firing), String> {
     Ok((samples_from(&tiles), firing_from(&alerts)))
 }
 
+/// The configured pipeline check: `Ok(true)` when its result holds any series.
+pub fn check(base: &str, query: &str) -> Result<bool, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(10)))
+        .build()
+        .into();
+    Ok(!instant(&agent, base, query)?.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

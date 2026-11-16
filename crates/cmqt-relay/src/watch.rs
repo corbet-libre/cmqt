@@ -1,5 +1,7 @@
 //! The relay as the watcher of the box: subscribes to the tile trees over MQTT/WebSocket and sends
-//! one ntfy alert when nothing live has arrived for `silence_s`, one message when it is back.
+//! one ntfy alert when nothing live has arrived for `silence_s`, or when the box's `_online` has said
+//! `degraded` for as long (it publishes, but VictoriaMetrics, vmalert or the alert path is broken), and one
+//! message when it is back.
 
 use rumqttc::{Client, Event, MqttOptions, Packet, QoS, Transport};
 use serde::Deserialize;
@@ -113,7 +115,19 @@ fn parse_focus(payload: &[u8]) -> Option<Vec<(String, String)>> {
     )
 }
 
-/// Alert state machine: pure, so it is testable. `tick` returns the message to send, if any.
+/// What the watcher sends.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Alarm {
+    /// nothing live from the box for the limit
+    Silent,
+    /// the box publishes, but its `_online` has said `degraded` for the limit
+    Degraded,
+    /// neither any more
+    Back,
+}
+
+/// Alert state machine: pure, so it is testable. `tick` returns the message to send, if any. A degraded box counts
+/// like a silent one (charter D69: one message, one on recovery); silence and degradation never page twice.
 pub struct Silence {
     limit: Duration,
     silent: bool,
@@ -130,17 +144,57 @@ impl Silence {
     pub fn reset(&mut self) {
         self.silent = false;
     }
-    pub fn tick(&mut self, since_last: Duration) -> Option<&'static str> {
-        if !self.silent && since_last >= self.limit {
+    /// `since_last`: time since the last live message; `degraded_for`: how long `_online` has said `degraded`.
+    pub fn tick(&mut self, since_last: Duration, degraded_for: Option<Duration>) -> Option<Alarm> {
+        let quiet = since_last.max(degraded_for.unwrap_or_default());
+        if !self.silent && quiet >= self.limit {
             self.silent = true;
-            Some("silent")
-        } else if self.silent && since_last < self.limit {
+            Some(if since_last >= self.limit {
+                Alarm::Silent
+            } else {
+                Alarm::Degraded
+            })
+        } else if self.silent && quiet < self.limit {
             self.silent = false;
-            Some("back")
+            Some(Alarm::Back)
         } else {
             None
         }
     }
+}
+
+/// The degradation `_online` reports (cmqt `Online.degraded`; the words are `cmqt::degraded`), in a sentence.
+pub fn degraded_text(reason: &str) -> &'static str {
+    match reason {
+        "query" => "VictoriaMetrics does not answer the board server",
+        "rules" => {
+            "VictoriaMetrics holds no recorded tile value: vmalert does not evaluate the rules"
+        }
+        "check" => {
+            "the box's pipeline check fires (Alertmanager down or vmalert cannot send alerts)"
+        }
+        _ => "the board server reports a broken pipeline",
+    }
+}
+
+/// The `degraded` word of a live `_online` payload, if any.
+fn parse_degraded(payload: &[u8]) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(payload).ok()?;
+    (v["state"] == "online")
+        .then(|| v["degraded"].as_str().map(str::to_string))
+        .flatten()
+}
+
+/// Since when, and why, the box has said `degraded` (both trees carry the same `_online`).
+type Degraded = Arc<Mutex<Option<(Instant, String)>>>;
+
+fn note_online(degraded: &Degraded, now: Instant, payload: &[u8]) {
+    let mut d = degraded.lock().unwrap_or_else(|e| e.into_inner());
+    *d = match (parse_degraded(payload), d.take()) {
+        (Some(r), Some((since, _))) => Some((since, r)),
+        (Some(r), None) => Some((now, r)),
+        (None, _) => None,
+    };
 }
 
 fn read_line(path: &str) -> Result<String, String> {
@@ -164,7 +218,8 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
     let pw = read_line(&cfg.password_file)?;
     let topic = read_line(&cfg.ntfy_topic_file)?;
     let last = Arc::new(Mutex::new(Instant::now()));
-    let (l2, c2) = (last.clone(), cfg.clone());
+    let degraded: Degraded = Arc::new(Mutex::new(None));
+    let (l2, c2, d2) = (last.clone(), cfg.clone(), degraded.clone());
     let focus = focus.clone();
     std::thread::spawn(move || {
         loop {
@@ -203,6 +258,7 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner())
                                 .heartbeat(Instant::now());
+                            note_online(&d2, Instant::now(), &p.payload);
                         }
                         if p.topic == "internal/_focus"
                             && let Some(pairs) = parse_focus(&p.payload)
@@ -232,12 +288,17 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
         loop {
             std::thread::sleep(Duration::from_secs(10));
             let since = last.lock().unwrap_or_else(|e| e.into_inner()).elapsed();
+            let deg = degraded
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .map(|(at, r)| (at.elapsed(), r.clone()));
             if crate::http::maintenance().is_some() {
                 s.reset();
                 continue;
             }
-            match s.tick(since) {
-                Some("silent") => notify(
+            match s.tick(since, deg.as_ref().map(|(d, _)| *d)) {
+                Some(Alarm::Silent) => notify(
                     &cfg,
                     &topic,
                     "Observability box silent",
@@ -246,11 +307,24 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
                         since.as_secs()
                     ),
                 ),
-                Some(_) => notify(
+                Some(Alarm::Degraded) => {
+                    let (d, r) = deg.unwrap_or_default();
+                    notify(
+                        &cfg,
+                        &topic,
+                        "Observability box degraded",
+                        &format!(
+                            "The box publishes, but {} ({r}, for {} s): its own alerts may not reach you.",
+                            degraded_text(&r),
+                            d.as_secs()
+                        ),
+                    )
+                }
+                Some(Alarm::Back) => notify(
                     &cfg,
                     &topic,
                     "Observability box back",
-                    "The box is publishing tiles again.",
+                    "The box is publishing tiles again, its pipeline healthy.",
                 ),
                 None => {}
             }
@@ -331,27 +405,64 @@ mod tests {
     fn maintenance_reset_mutes_and_a_still_silent_box_pages_again_after_it() {
         let secs = Duration::from_secs;
         let mut s = Silence::new(secs(300));
-        assert_eq!(s.tick(secs(400)), Some("silent"));
+        assert_eq!(s.tick(secs(400), None), Some(Alarm::Silent));
         s.reset(); // maintenance begins: nothing more, and no "back" either
-        assert_eq!(s.tick(secs(10)), None);
+        assert_eq!(s.tick(secs(10), None), None);
         s.reset();
         s.reset(); // maintenance still on, box silent again: still nothing is sent by the loop
         // maintenance cleared while the box stays silent past the threshold: paged again
-        assert_eq!(s.tick(secs(500)), Some("silent"));
-        assert_eq!(s.tick(secs(600)), None);
-        assert_eq!(s.tick(secs(5)), Some("back"));
+        assert_eq!(s.tick(secs(500), None), Some(Alarm::Silent));
+        assert_eq!(s.tick(secs(600), None), None);
+        assert_eq!(s.tick(secs(5), None), Some(Alarm::Back));
     }
 
     #[test]
     fn one_alert_one_recovery_no_repeats() {
         let mut s = Silence::new(Duration::from_secs(300));
         let secs = |n| Duration::from_secs(n);
-        assert_eq!(s.tick(secs(10)), None);
-        assert_eq!(s.tick(secs(299)), None);
-        assert_eq!(s.tick(secs(300)), Some("silent"));
-        assert_eq!(s.tick(secs(900)), None);
-        assert_eq!(s.tick(secs(9000)), None);
-        assert_eq!(s.tick(secs(5)), Some("back"));
-        assert_eq!(s.tick(secs(6)), None);
+        assert_eq!(s.tick(secs(10), None), None);
+        assert_eq!(s.tick(secs(299), None), None);
+        assert_eq!(s.tick(secs(300), None), Some(Alarm::Silent));
+        assert_eq!(s.tick(secs(900), None), None);
+        assert_eq!(s.tick(secs(9000), None), None);
+        assert_eq!(s.tick(secs(5), None), Some(Alarm::Back));
+        assert_eq!(s.tick(secs(6), None), None);
+    }
+
+    /// Bug hunt 2026-11-16, finding 3: a box whose VictoriaMetrics died kept publishing `_online` and was never paged.
+    #[test]
+    fn a_degraded_box_pages_like_a_silent_one_once_and_once_back() {
+        let mut s = Silence::new(Duration::from_secs(300));
+        let secs = |n| Duration::from_secs(n);
+        // messages keep arriving (since_last small) while `_online` says degraded
+        assert_eq!(s.tick(secs(5), Some(secs(100))), None);
+        assert_eq!(s.tick(secs(5), Some(secs(300))), Some(Alarm::Degraded));
+        assert_eq!(s.tick(secs(5), Some(secs(900))), None);
+        // it goes silent as well: no second page
+        assert_eq!(s.tick(secs(400), Some(secs(1200))), None);
+        assert_eq!(s.tick(secs(2), None), Some(Alarm::Back));
+        // a short degradation pages nothing
+        assert_eq!(s.tick(secs(2), Some(secs(299))), None);
+        assert_eq!(s.tick(secs(2), None), None);
+    }
+
+    #[test]
+    fn online_payloads_set_and_clear_the_degradation_keeping_its_start() {
+        let d: Degraded = Arc::new(Mutex::new(None));
+        let t0 = Instant::now();
+        let s = Duration::from_secs;
+        note_online(&d, t0, br#"{"state":"online","t":1,"interval_s":30}"#);
+        assert!(d.lock().unwrap().is_none());
+        note_online(&d, t0 + s(30), br#"{"state":"online","degraded":"query"}"#);
+        note_online(&d, t0 + s(150), br#"{"state":"online","degraded":"rules"}"#);
+        assert_eq!(
+            d.lock().unwrap().clone(),
+            Some((t0 + s(30), "rules".to_string()))
+        );
+        note_online(&d, t0 + s(200), br#"{"state":"generation-mismatch"}"#);
+        assert!(d.lock().unwrap().is_none());
+        note_online(&d, t0 + s(210), b"not json");
+        assert!(d.lock().unwrap().is_none());
+        assert!(degraded_text("query").contains("VictoriaMetrics"));
     }
 }

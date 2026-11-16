@@ -12,3 +12,6 @@ interval_s = 30
 # cprm output. When set, its generation must equal the dashboards' generation,
 # otherwise _online says "generation-mismatch" and no tile values go out.
 prometheus_manifest = "/var/lib/obs/prometheus/manifest.json"
+# Optional: a check of the alert path itself. Any series in its result marks _online degraded ("check") and the
+# relay's watcher pages on it through ntfy directly (Alertmanager may be what is broken).
+# degraded_query = 'up{job="alertmanager"} == 0 or absent(up{job="alertmanager"}) or increase(vmalert_alerts_send_errors_total[10m]) > 0'

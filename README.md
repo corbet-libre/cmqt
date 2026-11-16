@@ -25,9 +25,10 @@ board, a broken one is rejected and the old one keeps running), runs two
 instant queries (`corbet:tile:value`, `ALERTS{alertstate="firing"}`), and per
 tile computes `v`, `d` (unit and decimals), `c` (threshold colour) and `s`:
 
-* `issue`: one of the panel's `corbet.alerts` fires for the screen's `host_name`
+* `issue`: one of the panel's `corbet.alerts` fires with the panel's `corbet.scope` labels (`*` in `alerts`: any alert name);
+  an attention rule (`kind="attention"`) is never an issue, not on a tile and not on a topology node
 * `greyed`: greyed screens, never queried
-* `unknown`: no value, or VictoriaMetrics unreachable (then `_online` stays `online`)
+* `unknown`: no value, or VictoriaMetrics unreachable (then `_online` stays `online`, with `degraded`)
 
 Publishing: retained, QoS 1, only when `d`, `c` or `s` changed (a tile's `t` is
 the time of its last change; nothing is re-sent periodically). Only `_online`
@@ -37,6 +38,13 @@ has its own connection and its own retained last will on `_online`.
 and `_online` (every interval, with the generation id) are published as in §5.
 On a generation mismatch (dashboards vs `prometheus_manifest`) `_online` says
 `generation-mismatch` and no tile values go out.
+
+`_online` carries `degraded` while the box publishes but cannot tell the truth (`cmqt::degraded`): `query` (VictoriaMetrics does
+not answer), `rules` (it answers but holds no `corbet:tile:value` although the board has tiles: vmalert does not evaluate), `check`
+(the optional `degraded_query` returned a series: a check of the alert path itself, such as Alertmanager down or vmalert send
+errors). `state` stays `online`: screens stay live and their tiles carry their own `unknown`. A change of `degraded` publishes
+`_online` at once. The relay's box-silence watcher (`cmqt flush`) treats a box degraded for `silence_s` like a silent one: one ntfy
+message, one when it is back.
 
 The public tree is built from `dashboards/public/` only. As defence in depth,
 layout links and topology members that point at screens missing from the
@@ -100,7 +108,8 @@ Liveness comes from `_online` alone. A client measures the time since it last
 RECEIVED `_online` on its own monotonic clock (`performance.now()`, or `Instant`
 in `cmqt::freshness`); more than 3 x `interval_s`, no `_online`, or a state other
 than `online` means "observability unreachable" over the whole board;
-`generation-mismatch` shows "updating". The server's clock is never compared.
+`generation-mismatch` shows "updating". The server's clock is never compared. `degraded` does not change liveness (the tiles
+already say `unknown` where data is missing); it is for the relay's watcher.
 
 ## Browser check
 

@@ -35,6 +35,11 @@ pub struct Config {
     /// the dashboards' (contract §1).
     #[serde(default)]
     pub prometheus_manifest: Option<PathBuf>,
+    /// A PromQL check of the box's own pipeline, asked every evaluation: any series in its result marks `_online` degraded (`check`),
+    /// and the relay's watcher pages on that as on silence. For what VictoriaMetrics cannot alert on by itself, because the path of the
+    /// alert is what broke, e.g. `up{job="alertmanager"} == 0 or increase(vmalert_alerts_send_errors_total[10m]) > 0`.
+    #[serde(default)]
+    pub degraded_query: Option<String>,
 }
 
 fn default_host() -> String {
@@ -77,6 +82,16 @@ mod tests {
         let c = Config::parse("dashboards_dir='/d'\nvictoria_url='http://x'").unwrap();
         assert_eq!(c.interval_s, 30);
         assert_eq!(c.broker_port, 1883);
+    }
+
+    #[test]
+    fn degraded_query_is_optional() {
+        let c = Config::parse("dashboards_dir='/d'\nvictoria_url='http://x'").unwrap();
+        assert_eq!(c.degraded_query, None);
+        let c =
+            Config::parse("dashboards_dir='/d'\nvictoria_url='http://x'\ndegraded_query='up == 0'")
+                .unwrap();
+        assert_eq!(c.degraded_query.as_deref(), Some("up == 0"));
     }
 
     #[test]

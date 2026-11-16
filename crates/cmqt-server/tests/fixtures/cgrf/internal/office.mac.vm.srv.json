@@ -1,7 +1,7 @@
 {
   "corbet": {
     "door": "internal",
-    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "generation": "5a726d636151f70ebfd3f97dd554957f630bd417265e4aa43345335c84d68f8d",
     "greyed": true,
     "kind": "device",
     "schema": "corbet.obs.dashboard/1",
@@ -98,11 +98,11 @@
               },
               {
                 "color": "yellow",
-                "value": 20.0
+                "value": 72.0
               },
               {
                 "color": "red",
-                "value": 50.0
+                "value": 90.0
               }
             ]
           },
@@ -147,11 +147,11 @@
               },
               {
                 "color": "yellow",
-                "value": 80.0
+                "value": 72.0
               },
               {
                 "color": "red",
-                "value": 92.0
+                "value": 90.0
               }
             ]
           },
@@ -196,11 +196,11 @@
               },
               {
                 "color": "yellow",
-                "value": 80.0
+                "value": 93.75
               },
               {
                 "color": "red",
-                "value": 90.0
+                "value": 95.0
               }
             ]
           },
@@ -245,11 +245,11 @@
               },
               {
                 "color": "yellow",
-                "value": 20.0
+                "value": 32.0
               },
               {
                 "color": "red",
-                "value": 50.0
+                "value": 40.0
               }
             ]
           },
@@ -294,7 +294,7 @@
               },
               {
                 "color": "yellow",
-                "value": 0.1
+                "value": 0.8
               },
               {
                 "color": "red",
@@ -302,7 +302,7 @@
               }
             ]
           },
-          "unit": "ops"
+          "unit": "percent"
         }
       },
       "gridPos": {

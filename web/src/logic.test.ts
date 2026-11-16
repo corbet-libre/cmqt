@@ -29,6 +29,8 @@ test("liveness: offline, mismatch, time since _online was received", () => {
   assert.equal(freshness(1000, null), "unreachable");
   assert.equal(freshness(1000, { state: "offline" }), "unreachable");
   assert.equal(freshness(1000, { state: "generation-mismatch" }), "updating");
+  // a degraded box is still live for the screens: its tiles say unknown on their own
+  assert.equal(freshness(1000, { ...on, degraded: "query" }), "fresh");
 });
 
 test("colours map to classes", () => {

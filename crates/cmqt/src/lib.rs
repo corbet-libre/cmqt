@@ -155,6 +155,17 @@ pub enum OnlineState {
     GenerationMismatch,
 }
 
+/// Why the box is online but cannot tell the truth (`_online.degraded`). The board stays live (its tiles carry their own `unknown`
+/// state, never a stale green); the relay's box-silence watcher pages on it as on silence.
+pub mod degraded {
+    /// VictoriaMetrics did not answer (or answered an error): nothing could be evaluated.
+    pub const QUERY: &str = "query";
+    /// VictoriaMetrics answers but holds no recorded tile value: vmalert does not evaluate the rules.
+    pub const RULES: &str = "rules";
+    /// The configured pipeline check (cmqt-server `degraded_query`, e.g. Alertmanager down or vmalert send errors) returned a series.
+    pub const CHECK: &str = "check";
+}
+
 /// `_online` payload. The last will carries only `state`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Online {
@@ -165,6 +176,10 @@ pub struct Online {
     pub interval_s: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generation: Option<String>,
+    /// Present while the box publishes but its pipeline is broken: one of [`degraded`]'s words. An addition to the
+    /// contract: `state` stays `online` (clients that do not know the field keep working), only the watcher reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<String>,
 }
 
 impl Online {
@@ -175,6 +190,7 @@ impl Online {
             t: None,
             interval_s: None,
             generation: None,
+            degraded: None,
         }
     }
 }
@@ -222,6 +238,7 @@ mod tests {
             t: Some(0),
             interval_s: Some(interval),
             generation: None,
+            degraded: None,
         }
     }
 
@@ -251,6 +268,30 @@ mod tests {
         let back = serde_json::to_value(&m).unwrap();
         assert_eq!(back["v"], 0.63);
         assert_eq!(back["s"], "ok");
+    }
+
+    #[test]
+    fn degraded_is_an_optional_field_of_an_online_state() {
+        // an old payload (no field) still parses; a degraded one stays `online` for every client that ignores the field
+        let old: Online =
+            serde_json::from_str(r#"{"state":"online","t":1,"interval_s":30,"generation":"g"}"#)
+                .unwrap();
+        assert_eq!(old.degraded, None);
+        let mut d = old.clone();
+        d.degraded = Some(degraded::QUERY.into());
+        let v = serde_json::to_value(&d).unwrap();
+        assert_eq!(v["state"], "online");
+        assert_eq!(v["degraded"], "query");
+        assert!(
+            serde_json::to_value(&old)
+                .unwrap()
+                .get("degraded")
+                .is_none()
+        );
+        assert_eq!(
+            freshness(Some(Duration::from_secs(1)), Some(&d)),
+            Freshness::Fresh
+        );
     }
 
     #[test]

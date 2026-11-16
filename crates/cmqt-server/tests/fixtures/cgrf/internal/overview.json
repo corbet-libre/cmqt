@@ -1,7 +1,7 @@
 {
   "corbet": {
     "door": "internal",
-    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "generation": "5a726d636151f70ebfd3f97dd554957f630bd417265e4aa43345335c84d68f8d",
     "greyed": false,
     "kind": "overview",
     "schema": "corbet.obs.dashboard/1",
@@ -28,7 +28,9 @@
           "metric": "corbet:tile:value"
         },
         "scope": {
-          "site": "0x3D"
+          "host_name": [
+            "e2-micro"
+          ]
         },
         "tile": "chs_gcp"
       },
@@ -70,14 +72,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.fra.brh",
         "pages": false,
@@ -89,7 +84,13 @@
           "metric": "corbet:tile:value"
         },
         "scope": {
-          "site": "0x20"
+          "host_name": [
+            "fra-0",
+            "fra-1",
+            "fra-2",
+            "fra-3",
+            "fra-4"
+          ]
         },
         "tile": "fra_brh"
       },
@@ -127,7 +128,7 @@
       ],
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"fra-0|fra-1|fra-2\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",kind!=\"attention\",host_name=~\"fra-0|fra-1|fra-2\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -137,14 +138,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.fra.vtr",
         "pages": false,
@@ -156,7 +150,9 @@
           "metric": "corbet:tile:value"
         },
         "scope": {
-          "site": "0x21"
+          "host_name": [
+            "vultr"
+          ]
         },
         "tile": "fra_vtr"
       },
@@ -194,7 +190,7 @@
       ],
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"vultr\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",kind!=\"attention\",host_name=~\"vultr\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -204,14 +200,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.hel.pmd",
         "pages": false,
@@ -223,7 +212,15 @@
           "metric": "corbet:tile:value"
         },
         "scope": {
-          "site": "0x22"
+          "host_name": [
+            "cld-0",
+            "cld-1",
+            "cld-2",
+            "cld-3",
+            "cld-4",
+            "cld-5",
+            "cld-6"
+          ]
         },
         "tile": "hel_pmd"
       },
@@ -261,7 +258,7 @@
       ],
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"cld-0|cld-1|cld-2|cld-3|cld-4|cld-5|cld-6\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",kind!=\"attention\",host_name=~\"cld-0|cld-1|cld-2|cld-3|cld-4|cld-5|cld-6\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -271,14 +268,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "site.home",
         "pages": false,
@@ -290,7 +280,13 @@
           "metric": "corbet:tile:value"
         },
         "scope": {
-          "site": "0x2A"
+          "host_name": [
+            "srv",
+            "archlxc",
+            "elitebook",
+            "office.win.vm.srv",
+            "office.mac.vm.srv"
+          ]
         },
         "tile": "home"
       },
@@ -328,7 +324,7 @@
       ],
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"srv|archlxc\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",kind!=\"attention\",host_name=~\"srv|archlxc\"}) or vector(0)",
           "refId": "A"
         }
       ],

@@ -181,6 +181,28 @@ fn check_generation(cfg: &Config, board: &Board) -> Gen {
     }
 }
 
+/// Why `_online` is degraded this evaluation, if it is (`cmqt::degraded`): VictoriaMetrics did not answer (`query`), it answers but holds
+/// no recorded tile value although the board has tiles (`rules`: vmalert does not evaluate), or the configured pipeline check returned
+/// a series (`check`). A dead VictoriaMetrics, vmalert or Alertmanager was silent before: `_online` said `online` all the same and the
+/// relay's watcher, the one alarm that does not run on the box, never heard of it (bug hunt 2026-11-16, finding 3).
+pub fn degraded_reason(
+    board: &Board,
+    vmres: Option<&(engine::Samples, engine::Firing)>,
+    check: Option<Result<bool, String>>,
+) -> Option<&'static str> {
+    let has_tiles = board
+        .internal
+        .screens
+        .iter()
+        .any(|s| !s.greyed && !s.tiles.is_empty());
+    match (vmres, check) {
+        (None, _) | (_, Some(Err(_))) => Some(cmqt::degraded::QUERY),
+        (Some((samples, _)), _) if has_tiles && samples.is_empty() => Some(cmqt::degraded::RULES),
+        (_, Some(Ok(true))) => Some(cmqt::degraded::CHECK),
+        _ => None,
+    }
+}
+
 /// One evaluation for one tree.
 fn evaluate(
     cfg: &Config,
@@ -188,6 +210,7 @@ fn evaluate(
     board: &Board,
     gen_state: &Gen,
     vmres: Option<&(engine::Samples, engine::Firing)>,
+    degraded: Option<&'static str>,
     now: u64,
 ) {
     let tree_board = board.tree(link.tree);
@@ -244,9 +267,14 @@ fn evaluate(
         t: Some(now),
         interval_s: Some(cfg.interval_s),
         generation: Some(board.generation.clone()),
+        degraded: degraded.map(str::to_string),
     };
-    // The heartbeat: when the state or the generation changed, else every online_every_s (default 120; not every evaluation: each message costs outgoing bytes on the box).
-    let key = format!("{:?}{:?}", online.state, online.generation);
+    // The heartbeat: when the state, the generation or the degradation changed, else every online_every_s (default 120; not every
+    // evaluation: each message costs outgoing bytes on the box).
+    let key = format!(
+        "{:?}{:?}{:?}",
+        online.state, online.generation, online.degraded
+    );
     let due = match &link.last_online {
         Some((at, k)) => *k != key || at.elapsed() >= link.online_every,
         None => true,
@@ -308,21 +336,35 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             Err(e) => eprintln!("cmqt-server: manifest: {e}"),
         }
         let gen_state = check_generation(&cfg, &board);
-        let vmres = if matches!(gen_state, Gen::Match) {
+        let (vmres, degraded) = if matches!(gen_state, Gen::Match) {
             let url = cfg.victoria_url.clone();
-            match tokio::task::spawn_blocking(move || vm::fetch(&url)).await {
-                Ok(Ok(r)) => Some(r),
-                Ok(Err(e)) => {
+            let q = cfg.degraded_query.clone();
+            let run = move || {
+                let r = vm::fetch(&url);
+                let c = match (&r, q) {
+                    (Ok(_), Some(q)) => Some(vm::check(&url, &q)),
+                    _ => None,
+                };
+                (r, c)
+            };
+            let (vmres, check) = match tokio::task::spawn_blocking(run).await {
+                Ok((Ok(r), c)) => (Some(r), c),
+                Ok((Err(e), _)) => {
                     eprintln!("cmqt-server: victoriametrics: {e}");
-                    None
+                    (None, None)
                 }
                 Err(e) => {
                     eprintln!("cmqt-server: query task: {e}");
-                    None
+                    (None, None)
                 }
+            };
+            if let Some(Err(e)) = &check {
+                eprintln!("cmqt-server: degraded_query: {e}");
             }
+            let d = degraded_reason(&board, vmres.as_ref(), check);
+            (vmres, d)
         } else {
-            None
+            (None, None)
         };
         let now = now_s();
         for link in &mut links {
@@ -332,7 +374,15 @@ pub async fn run(cfg: Config) -> Result<(), String> {
                 link.tracker.clear();
                 link.last_online = None;
             }
-            evaluate(&cfg, link, &board, &gen_state, vmres.as_ref(), now);
+            evaluate(
+                &cfg,
+                link,
+                &board,
+                &gen_state,
+                vmres.as_ref(),
+                degraded,
+                now,
+            );
         }
     }
     // Clean shutdown: a normal DISCONNECT does not fire the will, so say it.
@@ -344,4 +394,73 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     }
     tokio::time::sleep(Duration::from_millis(300)).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dashboard::{Screen, TileDef, TreeBoard};
+    use cmqt::Grid;
+
+    fn board(with_tiles: bool) -> Board {
+        let tile = TileDef {
+            id: "ram".into(),
+            title: "ram".into(),
+            grid: Grid {
+                x: 0,
+                y: 0,
+                w: 8,
+                h: 4,
+            },
+            unit: None,
+            decimals: None,
+            steps: vec![],
+            alerts: vec![],
+            link: None,
+            scope: Default::default(),
+            record: ("srv".into(), "ram".into()),
+        };
+        let screen = Screen {
+            name: "srv".into(),
+            title: "srv".into(),
+            kind: "device".into(),
+            greyed: false,
+            tiles: if with_tiles { vec![tile] } else { vec![] },
+            topology: None,
+        };
+        Board {
+            generation: "g".into(),
+            public: TreeBoard::default(),
+            internal: TreeBoard {
+                screens: vec![screen],
+            },
+        }
+    }
+
+    #[test]
+    fn degraded_when_victoria_fails_rules_stop_or_the_check_fires() {
+        let b = board(true);
+        let mut s = engine::Samples::default();
+        let empty = (engine::Samples::default(), engine::Firing::default());
+        s.insert("srv", "ram", 0.5);
+        let ok = (s, engine::Firing::default());
+        assert_eq!(degraded_reason(&b, None, None), Some("query"));
+        assert_eq!(
+            degraded_reason(&b, Some(&ok), Some(Err("x".into()))),
+            Some("query")
+        );
+        assert_eq!(degraded_reason(&b, Some(&empty), None), Some("rules"));
+        assert_eq!(
+            degraded_reason(&b, Some(&empty), Some(Ok(true))),
+            Some("rules")
+        );
+        assert_eq!(
+            degraded_reason(&b, Some(&ok), Some(Ok(true))),
+            Some("check")
+        );
+        assert_eq!(degraded_reason(&b, Some(&ok), Some(Ok(false))), None);
+        assert_eq!(degraded_reason(&b, Some(&ok), None), None);
+        // a board without tiles records nothing: an empty answer is no sign of broken rules
+        assert_eq!(degraded_reason(&board(false), Some(&empty), None), None);
+    }
 }

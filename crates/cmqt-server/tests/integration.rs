@@ -130,6 +130,8 @@ struct Vm {
 struct VmState {
     ram: f64,
     fail: bool,
+    /// answer the tile query with no series (vmalert not evaluating)
+    no_tiles: bool,
     /// Firing alerts: `(alertname, [(label, value)])`.
     firing: Vec<(String, Vec<(String, String)>)>,
 }
@@ -141,6 +143,7 @@ impl Vm {
         let state = Arc::new(Mutex::new(VmState {
             ram: 63.0,
             fail: false,
+            no_tiles: false,
             firing: vec![],
         }));
         let st = state.clone();
@@ -169,6 +172,12 @@ impl Vm {
                     (
                         "200 OK",
                         json!({"status":"success","data":{"resultType":"vector","result":r}})
+                            .to_string(),
+                    )
+                } else if s.no_tiles {
+                    (
+                        "200 OK",
+                        json!({"status":"success","data":{"resultType":"vector","result":[]}})
                             .to_string(),
                     )
                 } else {
@@ -341,10 +350,28 @@ async fn topics_retention_and_public_isolation() {
     let (p, mp) = (free_port(), free_port());
     let broker = Broker::start(&dir, p, mp);
     let vm = Vm::start();
-    // archlxc is internal-only (home site); fra-0 is public (Frankfurt site)
+    // archlxc is internal-only (home site; alive by its heartbeat); fra-0 is public (Frankfurt site). Alerts carry the site CODE
+    // (cprm), which no scope uses: tiles match by host_name. cld-0 has only an attention rule (never an issue); fra-1 a rule ported
+    // from Vultr that carries host_name (an issue of the device, though no tile names it).
     vm.state.lock().unwrap().firing = vec![
-        alert("DeviceDown", &[("host_name", "archlxc"), ("site", "0x2A")]),
-        alert("DeviceDown", &[("host_name", "fra-0"), ("site", "0x20")]),
+        alert(
+            "DeviceHeartbeatLate",
+            &[("host_name", "archlxc"), ("site", "zrh.own")],
+        ),
+        alert("DeviceDown", &[("host_name", "fra-0"), ("site", "fra.brh")]),
+        alert(
+            "DeviceAttention",
+            &[
+                ("host_name", "cld-0"),
+                ("device", "cld-0"),
+                ("kind", "attention"),
+                ("subsystem", "disk-io"),
+            ],
+        ),
+        alert(
+            "HostSwapNearlyExhausted",
+            &[("host_name", "fra-1"), ("node", "brh-fra-k8s-1")],
+        ),
     ];
     let _server = Server::start(&dir, broker.port, &vm, 2, "");
 
@@ -380,7 +407,7 @@ async fn topics_retention_and_public_isolation() {
         on.expiry
     );
     assert!(ram.payload["t"].as_u64().unwrap() > 1_700_000_000);
-    // aggregate state comes from the alert match, scoped by site and host
+    // aggregate state comes from the alert match, scoped by host
     assert_eq!(
         all.last("internal/overview/home").unwrap().payload["s"],
         "issue"
@@ -404,8 +431,20 @@ async fn topics_retention_and_public_isolation() {
     );
     assert_eq!(
         all.last("internal/topology/cld-0").unwrap().payload["s"],
+        "ok",
+        "an attention rule is not an issue"
+    );
+    assert_eq!(
+        all.last("internal/site.hel.pmd/cld_0").unwrap().payload["s"],
         "ok"
     );
+    for t in ["internal/topology/fra-1", "internal/site.fra.brh/fra_1"] {
+        assert_eq!(
+            all.last(t).unwrap().payload["s"],
+            "issue",
+            "{t}: a ported rule with host_name"
+        );
+    }
     assert_eq!(
         all.last("internal/archlxc/alive").unwrap().payload["s"],
         "issue"
@@ -609,6 +648,7 @@ async fn victoriametrics_down_gives_unknown_but_stays_online() {
     let vm = Vm::start();
     let _server = Server::start(&dir, broker.port, &vm, 1, "");
     let w = Watcher::new(broker.port, "internal/#").await;
+    let wp = Watcher::new(broker.port, "public/_online").await;
     w.wait_for("ok tile", |w| {
         w.last("internal/srv/ram")
             .is_some_and(|m| m.payload["s"] == "ok")
@@ -623,14 +663,74 @@ async fn victoriametrics_down_gives_unknown_but_stays_online() {
     let before = online_count(&w, "internal");
     w.wait_for("still online", |w| online_count(w, "internal") > before)
         .await;
-    assert_eq!(
-        w.last("internal/_online").unwrap().payload["state"],
-        "online"
-    );
+    // still `online` for the screens (the tiles say unknown), but degraded for the relay's watcher, on both trees
+    wp.wait_for("public degraded", |w| {
+        w.last("public/_online")
+            .is_some_and(|m| m.payload["degraded"] == "query")
+    })
+    .await;
+    for (tree, w) in [("internal", &w), ("public", &wp)] {
+        let on = w.last(&format!("{tree}/_online")).unwrap().payload;
+        assert_eq!(
+            (on["state"].as_str(), on["degraded"].as_str()),
+            (Some("online"), Some("query")),
+            "{tree}"
+        );
+    }
     vm.state.lock().unwrap().fail = false;
     w.wait_for("recovered", |w| {
         w.last("internal/srv/ram")
             .is_some_and(|m| m.payload["s"] == "ok")
+    })
+    .await;
+    w.wait_for("no longer degraded", |w| {
+        w.last("internal/_online")
+            .is_some_and(|m| m.payload["state"] == "online" && m.payload.get("degraded").is_none())
+    })
+    .await;
+    // VictoriaMetrics answers but no rule writes the tile values (vmalert down): degraded `rules`, published at once
+    vm.state.lock().unwrap().no_tiles = true;
+    w.wait_for("degraded rules", |w| {
+        w.last("internal/_online")
+            .is_some_and(|m| m.payload["degraded"] == "rules")
+    })
+    .await;
+    vm.state.lock().unwrap().no_tiles = false;
+    w.wait_for("rules back", |w| {
+        w.last("internal/_online")
+            .is_some_and(|m| m.payload.get("degraded").is_none())
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_firing_pipeline_check_degrades_online() {
+    let dir = scratch("check");
+    let (p, mp) = (free_port(), free_port());
+    let broker = Broker::start(&dir, p, mp);
+    let vm = Vm::start();
+    // the fake answers every query that names ALERTS with the firing list: a check over ALERTS fires when it is not empty
+    let _server = Server::start(
+        &dir,
+        broker.port,
+        &vm,
+        1,
+        "degraded_query = 'ALERTS{alertname=\"AlertmanagerDown\"}'",
+    );
+    let w = Watcher::new(broker.port, "internal/_online").await;
+    w.wait_for("online", |w| online_count(w, "internal") >= 1)
+        .await;
+    assert!(
+        w.last("internal/_online")
+            .unwrap()
+            .payload
+            .get("degraded")
+            .is_none()
+    );
+    vm.state.lock().unwrap().firing = vec![alert("AlertmanagerDown", &[])];
+    w.wait_for("degraded check", |w| {
+        w.last("internal/_online")
+            .is_some_and(|m| m.payload["degraded"] == "check")
     })
     .await;
 }

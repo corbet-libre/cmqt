@@ -57,6 +57,9 @@ export interface Online {
   t?: number;
   interval_s?: number;
   generation?: string;
+  /** set while the box publishes but its pipeline is broken ("query" | "rules" | "check"); the tiles then carry their own
+   * unknown state, so the board stays live; the relay's watcher pages on it */
+  degraded?: string;
 }
 
 export type Tld = "ch" | "internal";

@@ -321,7 +321,8 @@ mod tests {
         assert_eq!(b.public.screens.len(), 23);
         assert_eq!(b.internal.screens.len(), 26);
         let srv = b.internal.screens.iter().find(|s| s.name == "srv").unwrap();
-        assert_eq!(srv.tiles.len(), 6);
+        // alive, jobs (srv's heartbeats), cpu, ram, disk, io, net
+        assert_eq!(srv.tiles.len(), 7);
         assert_eq!(srv.tiles[0].scope["host_name"], ["srv"]);
         let ov = b
             .public
@@ -330,8 +331,9 @@ mod tests {
             .find(|s| s.name == "overview")
             .unwrap();
         let fra = ov.tiles.iter().find(|t| t.id == "fra_brh").unwrap();
-        assert_eq!(fra.scope["site"], ["0x20"]);
+        assert!(!fra.scope.contains_key("site"), "scoped by host_name only");
         assert_eq!(fra.scope["host_name"].len(), 5, "list scope");
+        assert_eq!(fra.alerts, ["*"]);
         let topo = b
             .internal
             .screens

@@ -1,7 +1,7 @@
 {
   "corbet": {
     "door": "internal",
-    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "generation": "5a726d636151f70ebfd3f97dd554957f630bd417265e4aa43345335c84d68f8d",
     "greyed": false,
     "kind": "site",
     "schema": "corbet.obs.dashboard/1",
@@ -23,14 +23,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "fra-0",
         "pages": false,
@@ -80,7 +73,7 @@
       ],
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"fra-0\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",kind!=\"attention\",host_name=~\"fra-0\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -90,14 +83,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "fra-1",
         "pages": false,
@@ -147,7 +133,7 @@
       ],
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"fra-1\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",kind!=\"attention\",host_name=~\"fra-1\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -157,14 +143,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceCpuSaturated",
-          "DeviceDiskFull",
-          "DeviceDown",
-          "DeviceHeartbeatLate",
-          "DeviceIoSaturated",
-          "DeviceKernelErrors",
-          "DeviceMemoryLow",
-          "DeviceNetErrors"
+          "*"
         ],
         "link": "fra-2",
         "pages": false,
@@ -214,7 +193,7 @@
       ],
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\",host_name=~\"fra-2\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",kind!=\"attention\",host_name=~\"fra-2\"}) or vector(0)",
           "refId": "A"
         }
       ],

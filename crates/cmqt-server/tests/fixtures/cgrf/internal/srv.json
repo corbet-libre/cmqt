@@ -1,7 +1,7 @@
 {
   "corbet": {
     "door": "internal",
-    "generation": "ab4c49c0a3a27c9039173784d47d3518ecec67d6a4b78babaa037abfb8b9750d",
+    "generation": "5a726d636151f70ebfd3f97dd554957f630bd417265e4aa43345335c84d68f8d",
     "greyed": false,
     "kind": "device",
     "schema": "corbet.obs.dashboard/1",
@@ -28,8 +28,7 @@
     {
       "corbet": {
         "alerts": [
-          "DeviceDown",
-          "DeviceHeartbeatLate"
+          "DeviceDown"
         ],
         "pages": true,
         "record": {
@@ -72,11 +71,64 @@
       "id": 1,
       "targets": [
         {
-          "expr": "min(up{job=\"node-exporter\",cluster=\"srv\"}) * (time() - max(timestamp({job=\"watch-alive\"})) < bool 1800)",
+          "expr": "min(up{job=\"node-exporter\",cluster=\"srv\"})",
           "refId": "A"
         }
       ],
       "title": "Heartbeat",
+      "type": "stat"
+    },
+    {
+      "corbet": {
+        "alerts": [
+          "DeviceHeartbeatLate"
+        ],
+        "pages": true,
+        "record": {
+          "labels": {
+            "screen": "srv",
+            "tile": "jobs"
+          },
+          "metric": "corbet:tile:value"
+        },
+        "scope": {
+          "host_name": "srv"
+        },
+        "tile": "jobs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "(time() - max({job=\"watch-alive\"}) > bool 1800)",
+          "refId": "A"
+        }
+      ],
+      "title": "Jobs",
       "type": "stat"
     },
     {
@@ -109,11 +161,11 @@
               },
               {
                 "color": "yellow",
-                "value": 20.0
+                "value": 72.0
               },
               {
                 "color": "red",
-                "value": 50.0
+                "value": 90.0
               }
             ]
           },
@@ -123,13 +175,13 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 8,
+        "x": 16,
         "y": 0
       },
-      "id": 2,
+      "id": 3,
       "targets": [
         {
-          "expr": "100 * max(rate(node_pressure_cpu_waiting_seconds_total{job=\"node-exporter\",cluster=\"srv\"}[5m])) or 100 * (1 - avg(rate(node_cpu_seconds_total{job=\"node-exporter\",cluster=\"srv\",mode=\"idle\"}[5m])))",
+          "expr": "max((1 - sum without (cpu, mode) (rate(node_cpu_seconds_total{job=\"node-exporter\",cluster=\"srv\",mode=\"idle\"}[2m])) / ((count without (cpu, mode) (node_cpu_seconds_total{job=\"node-exporter\",cluster=\"srv\",mode=\"idle\"}) >= sum without (cpu, mode) (rate(node_cpu_seconds_total{job=\"node-exporter\",cluster=\"srv\"}[2m]))) or sum without (cpu, mode) (rate(node_cpu_seconds_total{job=\"node-exporter\",cluster=\"srv\"}[2m])))) * 100)",
           "refId": "A"
         }
       ],
@@ -166,11 +218,11 @@
               },
               {
                 "color": "yellow",
-                "value": 80.0
+                "value": 72.0
               },
               {
                 "color": "red",
-                "value": 92.0
+                "value": 90.0
               }
             ]
           },
@@ -180,13 +232,13 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 16,
-        "y": 0
+        "x": 0,
+        "y": 5
       },
-      "id": 3,
+      "id": 4,
       "targets": [
         {
-          "expr": "100 * (1 - sum(node_memory_MemAvailable_bytes{job=\"node-exporter\",cluster=\"srv\"}) / sum(node_memory_MemTotal_bytes{job=\"node-exporter\",cluster=\"srv\"}))",
+          "expr": "max(100 - (node_memory_MemAvailable_bytes{job=\"node-exporter\",cluster=\"srv\"} / node_memory_MemTotal_bytes{job=\"node-exporter\",cluster=\"srv\"} * 100))",
           "refId": "A"
         }
       ],
@@ -223,11 +275,11 @@
               },
               {
                 "color": "yellow",
-                "value": 80.0
+                "value": 93.75
               },
               {
                 "color": "red",
-                "value": 90.0
+                "value": 95.0
               }
             ]
           },
@@ -237,13 +289,13 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 0,
+        "x": 8,
         "y": 5
       },
-      "id": 4,
+      "id": 5,
       "targets": [
         {
-          "expr": "max(100 * (1 - node_filesystem_avail_bytes{job=\"node-exporter\",cluster=\"srv\",fstype!~\"tmpfs|overlay|squashfs|ramfs|devtmpfs\"} / node_filesystem_size_bytes{job=\"node-exporter\",cluster=\"srv\",fstype!~\"tmpfs|overlay|squashfs|ramfs|devtmpfs\"}))",
+          "expr": "max((100 - node_filesystem_avail_bytes{job=\"node-exporter\",cluster=\"srv\",fstype!~\"tmpfs|overlay|squashfs|ramfs|nsfs|proc|devtmpfs|fuse\\\\..*\"} / node_filesystem_size_bytes{job=\"node-exporter\",cluster=\"srv\",fstype!~\"tmpfs|overlay|squashfs|ramfs|nsfs|proc|devtmpfs|fuse\\\\..*\"} * 100) unless (node_filesystem_readonly{job=\"node-exporter\",cluster=\"srv\",fstype!~\"tmpfs|overlay|squashfs|ramfs|nsfs|proc|devtmpfs|fuse\\\\..*\"} == 1))",
           "refId": "A"
         }
       ],
@@ -280,11 +332,11 @@
               },
               {
                 "color": "yellow",
-                "value": 20.0
+                "value": 32.0
               },
               {
                 "color": "red",
-                "value": 50.0
+                "value": 40.0
               }
             ]
           },
@@ -294,13 +346,13 @@
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 8,
+        "x": 16,
         "y": 5
       },
-      "id": 5,
+      "id": 6,
       "targets": [
         {
-          "expr": "100 * max(rate(node_pressure_io_waiting_seconds_total{job=\"node-exporter\",cluster=\"srv\"}[5m]))",
+          "expr": "max(rate(node_pressure_io_waiting_seconds_total{job=\"node-exporter\",cluster=\"srv\"}[5m]) * 100)",
           "refId": "A"
         }
       ],
@@ -337,7 +389,7 @@
               },
               {
                 "color": "yellow",
-                "value": 0.1
+                "value": 0.8
               },
               {
                 "color": "red",
@@ -345,19 +397,19 @@
               }
             ]
           },
-          "unit": "ops"
+          "unit": "percent"
         }
       },
       "gridPos": {
         "h": 5,
         "w": 8,
-        "x": 16,
-        "y": 5
+        "x": 0,
+        "y": 10
       },
-      "id": 6,
+      "id": 7,
       "targets": [
         {
-          "expr": "sum(rate(node_network_receive_errs_total{job=\"node-exporter\",cluster=\"srv\"}[5m])) + sum(rate(node_network_transmit_errs_total{job=\"node-exporter\",cluster=\"srv\"}[5m]))",
+          "expr": "100 * max(label_replace(rate(node_network_receive_errs_total{job=\"node-exporter\",cluster=\"srv\"}[2m]) / rate(node_network_receive_packets_total{job=\"node-exporter\",cluster=\"srv\"}[2m]), \"direction\", \"receive\", \"\", \"\") or label_replace(rate(node_network_transmit_errs_total{job=\"node-exporter\",cluster=\"srv\"}[2m]) / rate(node_network_transmit_packets_total{job=\"node-exporter\",cluster=\"srv\"}[2m]), \"direction\", \"transmit\", \"\", \"\"))",
           "refId": "A"
         }
       ],
