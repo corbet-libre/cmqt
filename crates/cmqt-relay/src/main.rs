@@ -4,12 +4,12 @@ mod cache;
 mod flush;
 mod govern;
 mod http;
-mod watch;
 mod influx;
 mod keep;
 mod metrics;
 mod otlp;
 mod unseal;
+mod watch;
 mod wire;
 
 fn load<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {

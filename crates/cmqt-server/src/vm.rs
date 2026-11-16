@@ -23,15 +23,27 @@ fn instant(agent: &ureq::Agent, base: &str, query: &str) -> Result<Vec<Value>, S
 
 /// `(device, subsystem)` of every firing `DeviceAttention` alert (the foveal collection's focus).
 pub fn attention(base: &str) -> Result<Vec<(String, String)>, String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(10))).build().into();
-    let r = instant(&agent, base, r#"ALERTS{alertname="DeviceAttention",alertstate="firing"}"#)?;
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(10)))
+        .build()
+        .into();
+    let r = instant(
+        &agent,
+        base,
+        r#"ALERTS{alertname="DeviceAttention",alertstate="firing"}"#,
+    )?;
     Ok(attention_from(&r))
 }
 
 pub fn attention_from(result: &[Value]) -> Vec<(String, String)> {
     let mut v: Vec<(String, String)> = result
         .iter()
-        .filter_map(|r| Some((r["metric"]["device"].as_str()?.to_string(), r["metric"]["subsystem"].as_str()?.to_string())))
+        .filter_map(|r| {
+            Some((
+                r["metric"]["device"].as_str()?.to_string(),
+                r["metric"]["subsystem"].as_str()?.to_string(),
+            ))
+        })
         .collect();
     v.sort();
     v.dedup();
@@ -121,8 +133,15 @@ mod tests {
 
     #[test]
     fn reads_attention_pairs() {
-        let r = vec![serde_json::json!({"metric":{"device":"srv","subsystem":"cpu"}}), serde_json::json!({"metric":{"device":"srv","subsystem":"cpu"}}), serde_json::json!({"metric":{"device":"x"}})];
-        assert_eq!(attention_from(&r), vec![("srv".to_string(), "cpu".to_string())]);
+        let r = vec![
+            serde_json::json!({"metric":{"device":"srv","subsystem":"cpu"}}),
+            serde_json::json!({"metric":{"device":"srv","subsystem":"cpu"}}),
+            serde_json::json!({"metric":{"device":"x"}}),
+        ];
+        assert_eq!(
+            attention_from(&r),
+            vec![("srv".to_string(), "cpu".to_string())]
+        );
     }
 
     #[test]

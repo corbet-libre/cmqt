@@ -30,7 +30,13 @@ const NO_RECORDED_VALUE: u32 = 1;
 pub fn sanitize(s: &str) -> String {
     let mut o: String = s
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == ':' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == ':' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if o.is_empty() || o.as_bytes()[0].is_ascii_digit() {
         o.insert(0, '_');
@@ -75,7 +81,14 @@ fn add_attrs(tags: &mut Tags, attrs: &[KeyValue]) {
     }
 }
 
-fn line(out: &mut Vec<String>, name: &str, tags: &Tags, extra: Option<(&str, String)>, v: f64, ts: u64) {
+fn line(
+    out: &mut Vec<String>,
+    name: &str,
+    tags: &Tags,
+    extra: Option<(&str, String)>,
+    v: f64,
+    ts: u64,
+) {
     let mut l = String::with_capacity(96);
     l.push_str(name);
     let mut all: Vec<(&str, &str)> = tags.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
@@ -102,7 +115,11 @@ fn line(out: &mut Vec<String>, name: &str, tags: &Tags, extra: Option<(&str, Str
 }
 
 fn bound(b: f64) -> String {
-    if b.is_infinite() { "+Inf".into() } else { b.to_string() }
+    if b.is_infinite() {
+        "+Inf".into()
+    } else {
+        b.to_string()
+    }
 }
 
 pub fn convert(req: &Request, out: &mut Vec<String>) -> Tally {
@@ -140,16 +157,41 @@ pub fn convert(req: &Request, out: &mut Vec<String>) -> Tally {
                         let bucket = format!("{name}_bucket");
                         let mut cum = 0u64;
                         // No explicit bounds: the only bucket would be +Inf (= _count); skip it.
-                        let buckets = if p.explicit_bounds.is_empty() { &[][..] } else { &p.bucket_counts[..] };
+                        let buckets = if p.explicit_bounds.is_empty() {
+                            &[][..]
+                        } else {
+                            &p.bucket_counts[..]
+                        };
                         for (i, c) in buckets.iter().enumerate() {
                             cum += c;
                             let le = p.explicit_bounds.get(i).copied().unwrap_or(f64::INFINITY);
-                            line(out, &bucket, &tags, Some(("le", bound(le))), cum as f64, p.time_unix_nano);
+                            line(
+                                out,
+                                &bucket,
+                                &tags,
+                                Some(("le", bound(le))),
+                                cum as f64,
+                                p.time_unix_nano,
+                            );
                         }
                         if let Some(s) = p.sum.filter(|s| s.is_finite()) {
-                            line(out, &format!("{name}_sum"), &tags, None, s, p.time_unix_nano);
+                            line(
+                                out,
+                                &format!("{name}_sum"),
+                                &tags,
+                                None,
+                                s,
+                                p.time_unix_nano,
+                            );
                         }
-                        line(out, &format!("{name}_count"), &tags, None, p.count as f64, p.time_unix_nano);
+                        line(
+                            out,
+                            &format!("{name}_count"),
+                            &tags,
+                            None,
+                            p.count as f64,
+                            p.time_unix_nano,
+                        );
                         t.points += 1;
                     }
                 }
@@ -162,9 +204,23 @@ pub fn convert(req: &Request, out: &mut Vec<String>) -> Tally {
                         let mut tags = base.clone();
                         add_attrs(&mut tags, &p.attributes);
                         if let Some(s) = p.sum.filter(|s| s.is_finite()) {
-                            line(out, &format!("{name}_sum"), &tags, None, s, p.time_unix_nano);
+                            line(
+                                out,
+                                &format!("{name}_sum"),
+                                &tags,
+                                None,
+                                s,
+                                p.time_unix_nano,
+                            );
                         }
-                        line(out, &format!("{name}_count"), &tags, None, p.count as f64, p.time_unix_nano);
+                        line(
+                            out,
+                            &format!("{name}_count"),
+                            &tags,
+                            None,
+                            p.count as f64,
+                            p.time_unix_nano,
+                        );
                         t.points += 1;
                         t.exp_buckets_dropped += 1;
                     }
@@ -178,10 +234,31 @@ pub fn convert(req: &Request, out: &mut Vec<String>) -> Tally {
                         let mut tags = base.clone();
                         add_attrs(&mut tags, &p.attributes);
                         for q in p.quantile_values.iter().filter(|q| q.value.is_finite()) {
-                            line(out, &name, &tags, Some(("quantile", q.quantile.to_string())), q.value, p.time_unix_nano);
+                            line(
+                                out,
+                                &name,
+                                &tags,
+                                Some(("quantile", q.quantile.to_string())),
+                                q.value,
+                                p.time_unix_nano,
+                            );
                         }
-                        line(out, &format!("{name}_sum"), &tags, None, p.sum, p.time_unix_nano);
-                        line(out, &format!("{name}_count"), &tags, None, p.count as f64, p.time_unix_nano);
+                        line(
+                            out,
+                            &format!("{name}_sum"),
+                            &tags,
+                            None,
+                            p.sum,
+                            p.time_unix_nano,
+                        );
+                        line(
+                            out,
+                            &format!("{name}_count"),
+                            &tags,
+                            None,
+                            p.count as f64,
+                            p.time_unix_nano,
+                        );
                         t.points += 1;
                     }
                 }
@@ -251,7 +328,14 @@ mod tests {
         assert_eq!(l[8], r"eh_count,host_name=a\ b value=2 100");
         assert_eq!(l[9], r"sm,host_name=a\ b,quantile=0.5 value=2 100");
         assert_eq!(l.len(), 12);
-        assert_eq!(t, Tally { points: 5, skipped: 0, exp_buckets_dropped: 1 });
+        assert_eq!(
+            t,
+            Tally {
+                points: 5,
+                skipped: 0,
+                exp_buckets_dropped: 1
+            }
+        );
     }
 
     #[test]
@@ -367,7 +451,16 @@ mod zstd_tests {
     use super::*;
     #[test]
     fn frames_are_independent_and_within_target() {
-        let lines: Vec<String> = (0..2000).map(|i| format!("node_cpu_seconds_total,instance=host{},job=job{} value={}.5 17947400000000000", i % 40, i % 7, i)).collect();
+        let lines: Vec<String> = (0..2000)
+            .map(|i| {
+                format!(
+                    "node_cpu_seconds_total,instance=host{},job=job{} value={}.5 17947400000000000",
+                    i % 40,
+                    i % 7,
+                    i
+                )
+            })
+            .collect();
         let (v, o) = pack_zstd(&lines, 1100);
         assert_eq!(o, 0);
         assert!(v.iter().all(|f| f.len() <= 1100));
@@ -375,7 +468,10 @@ mod zstd_tests {
         for f in &v {
             back.extend_from_slice(&crate::wire::decompress(f, 1 << 20).unwrap());
         }
-        assert_eq!(String::from_utf8(back).unwrap(), lines.iter().map(|l| format!("{l}\n")).collect::<String>());
+        assert_eq!(
+            String::from_utf8(back).unwrap(),
+            lines.iter().map(|l| format!("{l}\n")).collect::<String>()
+        );
         assert!(v.len() < 100, "{} datagrams", v.len());
     }
 }
@@ -386,9 +482,21 @@ mod bench {
     #[test]
     #[ignore]
     fn bench_pack() {
-        let Ok(p) = std::env::var("CMQT_BENCH_LINES") else { return };
-        let all: Vec<String> = std::fs::read_to_string(p).unwrap().lines().map(str::to_string).collect();
-        crate::wire::set_format(std::env::var("CMQT_BENCH_FORMAT").ok().and_then(|v| v.parse().ok()).unwrap_or(2)).unwrap();
+        let Ok(p) = std::env::var("CMQT_BENCH_LINES") else {
+            return;
+        };
+        let all: Vec<String> = std::fs::read_to_string(p)
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect();
+        crate::wire::set_format(
+            std::env::var("CMQT_BENCH_FORMAT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(2),
+        )
+        .unwrap();
         let reqs: Vec<&[String]> = all.chunks(400).collect();
         let t = std::time::Instant::now();
         let (mut dg, mut bytes) = (0usize, 0usize);
@@ -398,6 +506,14 @@ mod bench {
             bytes += v.iter().map(Vec::len).sum::<usize>();
         }
         let e = t.elapsed();
-        eprintln!("{} lines, {} requests, {} datagrams, {} bytes, {:?} total, {:?} per request", all.len(), reqs.len(), dg, bytes, e, e / reqs.len() as u32);
+        eprintln!(
+            "{} lines, {} requests, {} datagrams, {} bytes, {:?} total, {:?} per request",
+            all.len(),
+            reqs.len(),
+            dg,
+            bytes,
+            e,
+            e / reqs.len() as u32
+        );
     }
 }

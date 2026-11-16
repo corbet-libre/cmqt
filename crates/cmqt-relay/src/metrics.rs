@@ -9,7 +9,12 @@ pub struct Counters(Vec<(&'static str, &'static str, AtomicU64)>);
 
 impl Counters {
     pub fn new(items: &[(&'static str, &'static str)]) -> Arc<Self> {
-        Arc::new(Counters(items.iter().map(|(n, h)| (*n, *h, AtomicU64::new(0))).collect()))
+        Arc::new(Counters(
+            items
+                .iter()
+                .map(|(n, h)| (*n, *h, AtomicU64::new(0)))
+                .collect(),
+        ))
     }
     pub fn add(&self, name: &str, n: u64) {
         match self.0.iter().find(|c| c.0 == name) {
@@ -21,12 +26,18 @@ impl Counters {
     }
     #[cfg(test)]
     pub fn get(&self, name: &str) -> u64 {
-        self.0.iter().find(|c| c.0 == name).map_or(0, |c| c.2.load(Ordering::Relaxed))
+        self.0
+            .iter()
+            .find(|c| c.0 == name)
+            .map_or(0, |c| c.2.load(Ordering::Relaxed))
     }
     pub fn render(&self) -> String {
         let mut o = String::new();
         for (n, h, v) in &self.0 {
-            o.push_str(&format!("# HELP {n} {h}\n# TYPE {n} counter\n{n} {}\n", v.load(Ordering::Relaxed)));
+            o.push_str(&format!(
+                "# HELP {n} {h}\n# TYPE {n} counter\n{n} {}\n",
+                v.load(Ordering::Relaxed)
+            ));
         }
         o
     }

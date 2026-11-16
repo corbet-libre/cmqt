@@ -85,11 +85,17 @@ pub fn level(total_mib: u64, warn: u64, prune: u64, refuse: u64) -> Level {
 
 /// Does an order cover a message of `topic` at `ts`?
 pub fn covers(orders: &[Order], topic: &str, ts: i64) -> bool {
-    orders.iter().any(|o| topic.starts_with(&o.prefix) && o.end_ms.is_none_or(|e| ts <= e))
+    orders
+        .iter()
+        .any(|o| topic.starts_with(&o.prefix) && o.end_ms.is_none_or(|e| ts <= e))
 }
 
 /// Merge entries of the database and of RAM: one message per (topic, ts), RAM wins; the newest `limit`.
-pub fn merge(db: Vec<(String, i64, Vec<u8>)>, ram: Vec<(String, i64, Vec<u8>)>, limit: usize) -> Vec<(String, i64, Vec<u8>)> {
+pub fn merge(
+    db: Vec<(String, i64, Vec<u8>)>,
+    ram: Vec<(String, i64, Vec<u8>)>,
+    limit: usize,
+) -> Vec<(String, i64, Vec<u8>)> {
     let mut m: BTreeMap<(i64, String), Vec<u8>> = BTreeMap::new();
     for (k, t, p) in db.into_iter().chain(ram) {
         m.insert((t, k), p);
@@ -119,14 +125,21 @@ static K: OnceLock<(Mutex<Keeper>, String)> = OnceLock::new();
 fn connect(cfg: &Config, pw: &str) -> Result<postgres::Client, String> {
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls_cfg = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
-        .with_safe_default_protocol_versions()
-        .map_err(|e| e.to_string())?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let tls_cfg = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|e| e.to_string())?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_cfg);
     let mut c = postgres::Config::new();
-    c.host(&cfg.host).user(&cfg.user).password(pw).dbname(&cfg.dbname).ssl_mode(postgres::config::SslMode::Require).connect_timeout(Duration::from_secs(10));
+    c.host(&cfg.host)
+        .user(&cfg.user)
+        .password(pw)
+        .dbname(&cfg.dbname)
+        .ssl_mode(postgres::config::SslMode::Require)
+        .connect_timeout(Duration::from_secs(10));
     c.connect(tls).map_err(|e| e.to_string())
 }
 
@@ -135,9 +148,14 @@ impl Keeper {
         if self.client.as_ref().is_none_or(|c| c.is_closed()) {
             self.client = Some(connect(&self.cfg, &self.pw)?);
         }
-        self.client.as_mut().ok_or_else(|| "no connection".to_string())
+        self.client
+            .as_mut()
+            .ok_or_else(|| "no connection".to_string())
     }
-    fn run<T>(&mut self, f: impl FnOnce(&mut postgres::Client) -> Result<T, postgres::Error>) -> Result<T, String> {
+    fn run<T>(
+        &mut self,
+        f: impl FnOnce(&mut postgres::Client) -> Result<T, postgres::Error>,
+    ) -> Result<T, String> {
         let r = f(self.db()?).map_err(|e| e.to_string());
         if r.is_err() {
             self.client = None;
@@ -153,28 +171,48 @@ impl Keeper {
             && let Err(e) = self.put_block(topic, &entries)
         {
             eprintln!("cmqt flush: keep: write {topic}: {e}");
-            self.pending.insert(topic.to_string(), (Instant::now(), entries)); // retried on the next tick
+            self.pending
+                .insert(topic.to_string(), (Instant::now(), entries)); // retried on the next tick
         }
     }
     fn last_from_db(&mut self, topic: &str) -> Vec<u8> {
         let topic = topic.to_string();
         let row = self.run(|c| c.query_opt("select first_ts, n, data from keep_blocks where topic = $1 order by first_ts desc limit 1", &[&topic]));
         match row {
-            Ok(Some(r)) => unseal_entries(r.get(0), r.get::<_, i32>(1) as usize, r.get(2)).pop().map(|e| e.1).unwrap_or_default(),
+            Ok(Some(r)) => unseal_entries(r.get(0), r.get::<_, i32>(1) as usize, r.get(2))
+                .pop()
+                .map(|e| e.1)
+                .unwrap_or_default(),
             _ => Vec::new(),
         }
     }
 }
 
 fn lock() -> Option<std::sync::MutexGuard<'static, Keeper>> {
-    K.get().map(|(m, _)| m.lock().unwrap_or_else(|e| e.into_inner()))
+    K.get()
+        .map(|(m, _)| m.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// Connect, create the tables, load the orders; start the periodic work.
 pub fn init(cfg: Config) -> Result<(), String> {
-    let pw = std::fs::read_to_string(&cfg.password_file).map_err(|e| format!("keep password: {e}"))?.trim().to_string();
-    let admin = std::fs::read_to_string(&cfg.admin_password_file).map_err(|e| format!("keep admin password: {e}"))?.trim().to_string();
-    let mut k = Keeper { cfg: cfg.clone(), pw, client: None, orders: Vec::new(), pending: HashMap::new(), last: HashMap::new(), refuse: false, total_mib: 0 };
+    let pw = std::fs::read_to_string(&cfg.password_file)
+        .map_err(|e| format!("keep password: {e}"))?
+        .trim()
+        .to_string();
+    let admin = std::fs::read_to_string(&cfg.admin_password_file)
+        .map_err(|e| format!("keep admin password: {e}"))?
+        .trim()
+        .to_string();
+    let mut k = Keeper {
+        cfg: cfg.clone(),
+        pw,
+        client: None,
+        orders: Vec::new(),
+        pending: HashMap::new(),
+        last: HashMap::new(),
+        refuse: false,
+        total_mib: 0,
+    };
     k.run(|c| {
         c.batch_execute(
             "create table if not exists keep_orders(prefix text primary key, created_ms bigint not null, end_ms bigint);
@@ -183,12 +221,20 @@ pub fn init(cfg: Config) -> Result<(), String> {
         )
     })?;
     let rows = k.run(|c| c.query("select prefix, end_ms from keep_orders", &[]))?;
-    k.orders = rows.iter().map(|r| Order { prefix: r.get(0), end_ms: r.get(1) }).collect();
+    k.orders = rows
+        .iter()
+        .map(|r| Order {
+            prefix: r.get(0),
+            end_ms: r.get(1),
+        })
+        .collect();
     eprintln!("cmqt flush: keep: {} order(s) loaded", k.orders.len());
     let _ = K.set((Mutex::new(k), admin));
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(60));
-        tick(&cfg);
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(60));
+            tick(&cfg);
+        }
     });
     Ok(())
 }
@@ -201,7 +247,11 @@ pub fn admin_ok(auth: Option<&str>) -> bool {
     use base64::Engine;
     let Some((_, pw)) = K.get() else { return false };
     auth.and_then(|a| a.strip_prefix("Basic "))
-        .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b.trim()).ok())
+        .and_then(|b| {
+            base64::engine::general_purpose::STANDARD
+                .decode(b.trim())
+                .ok()
+        })
         .is_some_and(|d| crate::http::eq(&d, format!("admin:{pw}").as_bytes()))
 }
 
@@ -215,11 +265,17 @@ pub fn observe(topic: &str, ts: i64, payload: &[u8]) {
         let l = k.last_from_db(topic);
         k.last.insert(topic.to_string(), l);
     }
-    if k.last.get(topic).is_some_and(|l| !l.is_empty() && l == payload) {
+    if k.last
+        .get(topic)
+        .is_some_and(|l| !l.is_empty() && l == payload)
+    {
         return;
     }
     k.last.insert(topic.to_string(), payload.to_vec());
-    let e = k.pending.entry(topic.to_string()).or_insert_with(|| (Instant::now(), Vec::new()));
+    let e = k
+        .pending
+        .entry(topic.to_string())
+        .or_insert_with(|| (Instant::now(), Vec::new()));
     e.1.push((ts, payload.to_vec()));
     if e.1.len() >= BLOCK_MSGS {
         k.flush_topic(topic);
@@ -227,20 +283,41 @@ pub fn observe(topic: &str, ts: i64, payload: &[u8]) {
 }
 
 /// Add an order and write out what RAM holds for it first. Returns the number of blocks written.
-pub fn add_order(prefix: &str, end_ms: Option<i64>, cache: &Mutex<crate::cache::Cache>) -> Result<usize, (u16, String)> {
-    let Some(mut k) = lock() else { return Err((503, "keep is off".into())) };
+pub fn add_order(
+    prefix: &str,
+    end_ms: Option<i64>,
+    cache: &Mutex<crate::cache::Cache>,
+) -> Result<usize, (u16, String)> {
+    let Some(mut k) = lock() else {
+        return Err((503, "keep is off".into()));
+    };
     if k.refuse {
         return Err((507, "refused: the account is over its ceiling".into()));
     }
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
     let p = prefix.to_string();
     k.run(|c| c.execute("insert into keep_orders(prefix, created_ms, end_ms) values ($1,$2,$3) on conflict (prefix) do update set end_ms = excluded.end_ms", &[&p, &now, &end_ms]).map(|_| ())).map_err(|e| (503, e))?;
     k.orders.retain(|o| o.prefix != prefix);
-    k.orders.push(Order { prefix: prefix.to_string(), end_ms });
-    let topics = cache.lock().unwrap_or_else(|e| e.into_inner()).topics_with(prefix);
+    k.orders.push(Order {
+        prefix: prefix.to_string(),
+        end_ms,
+    });
+    let topics = cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .topics_with(prefix);
     let mut blocks = 0;
     for t in topics {
-        let entries: Vec<_> = cache.lock().unwrap_or_else(|e| e.into_inner()).entries(&t).into_iter().filter(|e| end_ms.is_none_or(|x| e.0 <= x)).collect();
+        let entries: Vec<_> = cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries(&t)
+            .into_iter()
+            .filter(|e| end_ms.is_none_or(|x| e.0 <= x))
+            .collect();
         for chunk in entries.chunks(BLOCK_MSGS) {
             k.put_block(&t, chunk).map_err(|e| (503, e))?;
             blocks += 1;
@@ -254,10 +331,21 @@ pub fn add_order(prefix: &str, end_ms: Option<i64>, cache: &Mutex<crate::cache::
 }
 
 pub fn remove_order(prefix: &str) -> Result<(), (u16, String)> {
-    let Some(mut k) = lock() else { return Err((503, "keep is off".into())) };
+    let Some(mut k) = lock() else {
+        return Err((503, "keep is off".into()));
+    };
     let p = prefix.to_string();
-    k.run(|c| c.execute("delete from keep_orders where prefix = $1", &[&p]).map(|_| ())).map_err(|e| (503, e))?;
-    let drop_topics: Vec<String> = k.pending.keys().filter(|t| t.starts_with(prefix)).cloned().collect();
+    k.run(|c| {
+        c.execute("delete from keep_orders where prefix = $1", &[&p])
+            .map(|_| ())
+    })
+    .map_err(|e| (503, e))?;
+    let drop_topics: Vec<String> = k
+        .pending
+        .keys()
+        .filter(|t| t.starts_with(prefix))
+        .cloned()
+        .collect();
     for t in drop_topics {
         k.flush_topic(&t);
     }
@@ -267,13 +355,20 @@ pub fn remove_order(prefix: &str) -> Result<(), (u16, String)> {
 
 pub fn status_json() -> String {
     let Some(k) = lock() else { return "{}".into() };
-    let orders: Vec<_> = k.orders.iter().map(|o| serde_json::json!({"prefix": o.prefix, "end_ms": o.end_ms})).collect();
-    serde_json::json!({"orders": orders, "total_mib": k.total_mib, "refusing": k.refuse}).to_string()
+    let orders: Vec<_> = k
+        .orders
+        .iter()
+        .map(|o| serde_json::json!({"prefix": o.prefix, "end_ms": o.end_ms}))
+        .collect();
+    serde_json::json!({"orders": orders, "total_mib": k.total_mib, "refusing": k.refuse})
+        .to_string()
 }
 
 /// Kept messages of the database in `[start, end]` (ms) under `prefix`, for the merged query.
 pub fn db_range(prefix: &str, start: i64, end: i64) -> Vec<(String, i64, Vec<u8>)> {
-    let Some(mut k) = lock() else { return Vec::new() };
+    let Some(mut k) = lock() else {
+        return Vec::new();
+    };
     let p = prefix.to_string();
     let rows = k.run(|c| c.query("select topic, first_ts, n, data from keep_blocks where left(topic, length($1)) = $1 and last_ts >= $2 and first_ts <= $3", &[&p, &start, &end]));
     let mut out = Vec::new();
@@ -281,7 +376,12 @@ pub fn db_range(prefix: &str, start: i64, end: i64) -> Vec<(String, i64, Vec<u8>
         Ok(rows) => {
             for r in rows {
                 let topic: String = r.get(0);
-                out.extend(unseal_entries(r.get(1), r.get::<_, i32>(2) as usize, r.get(3)).into_iter().filter(|e| e.0 >= start && e.0 <= end).map(|e| (topic.clone(), e.0, e.1)));
+                out.extend(
+                    unseal_entries(r.get(1), r.get::<_, i32>(2) as usize, r.get(3))
+                        .into_iter()
+                        .filter(|e| e.0 >= start && e.0 <= end)
+                        .map(|e| (topic.clone(), e.0, e.1)),
+                );
             }
         }
         Err(e) => eprintln!("cmqt flush: keep: read: {e}"),
@@ -293,7 +393,15 @@ pub fn db_range(prefix: &str, start: i64, end: i64) -> Vec<(String, i64, Vec<u8>
 
 fn pending_range(prefix: &str, start: i64, end: i64) -> Vec<(String, i64, Vec<u8>)> {
     let Some(k) = lock() else { return Vec::new() };
-    k.pending.iter().filter(|(t, _)| t.starts_with(prefix)).flat_map(|(t, (_, v))| v.iter().filter(|e| e.0 >= start && e.0 <= end).map(|e| (t.clone(), e.0, e.1.clone()))).collect()
+    k.pending
+        .iter()
+        .filter(|(t, _)| t.starts_with(prefix))
+        .flat_map(|(t, (_, v))| {
+            v.iter()
+                .filter(|e| e.0 >= start && e.0 <= end)
+                .map(|e| (t.clone(), e.0, e.1.clone()))
+        })
+        .collect()
 }
 
 /// Streamed export: NDJSON lines `{"topic","t","payload"}` from the database page by page, then
@@ -312,11 +420,26 @@ pub struct Export {
 
 impl Export {
     pub fn new(prefix: String, start: i64, end: i64) -> Self {
-        Export { prefix, start, end, cursor: (i64::MIN, String::new()), emitted: HashMap::new(), ram: None, buf: Vec::new(), pos: 0, done: false }
+        Export {
+            prefix,
+            start,
+            end,
+            cursor: (i64::MIN, String::new()),
+            emitted: HashMap::new(),
+            ram: None,
+            buf: Vec::new(),
+            pos: 0,
+            done: false,
+        }
     }
     fn line(&mut self, topic: &str, ts: i64, p: &[u8]) {
-        let payload = serde_json::from_slice(p).unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(p).into_owned()));
-        self.buf.extend_from_slice(serde_json::json!({"topic": topic, "t": ts as f64 / 1000.0, "payload": payload}).to_string().as_bytes());
+        let payload = serde_json::from_slice(p)
+            .unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(p).into_owned()));
+        self.buf.extend_from_slice(
+            serde_json::json!({"topic": topic, "t": ts as f64 / 1000.0, "payload": payload})
+                .to_string()
+                .as_bytes(),
+        );
         self.buf.push(b'\n');
         let e = self.emitted.entry(topic.to_string()).or_insert(i64::MIN);
         *e = (*e).max(ts);
@@ -327,7 +450,12 @@ impl Export {
         if self.ram.is_none() {
             let rows = match lock() {
                 Some(mut k) => {
-                    let (p, s, e, c) = (self.prefix.clone(), self.start, self.end, self.cursor.clone());
+                    let (p, s, e, c) = (
+                        self.prefix.clone(),
+                        self.start,
+                        self.end,
+                        self.cursor.clone(),
+                    );
                     k.run(|cl| cl.query("select topic, first_ts, n, data from keep_blocks where left(topic, length($1)) = $1 and last_ts >= $2 and first_ts <= $3 and (first_ts, topic) > ($4, $5) order by first_ts, topic limit 20", &[&p, &s, &e, &c.0, &c.1]))
                 }
                 None => Ok(Vec::new()),
@@ -338,7 +466,10 @@ impl Export {
                         let (topic, first): (String, i64) = (r.get(0), r.get(1));
                         self.cursor = (first, topic.clone());
                         for e in unseal_entries(first, r.get::<_, i32>(2) as usize, r.get(3)) {
-                            if e.0 >= self.start && e.0 <= self.end && e.0 > self.emitted.get(&topic).copied().unwrap_or(i64::MIN) {
+                            if e.0 >= self.start
+                                && e.0 <= self.end
+                                && e.0 > self.emitted.get(&topic).copied().unwrap_or(i64::MIN)
+                            {
                                 self.line(&topic, e.0, &e.1);
                             }
                         }
@@ -387,7 +518,9 @@ impl std::io::Read for Export {
 
 /// Size of the files under `dir` (regular files only, symlinks not followed).
 fn dir_bytes(dir: &std::path::Path) -> u64 {
-    let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     rd.flatten()
         .map(|e| match e.file_type() {
             Ok(t) if t.is_dir() => dir_bytes(&e.path()),
@@ -402,7 +535,12 @@ fn tick(cfg: &Config) {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if let Some(mut k) = lock() {
-        let old: Vec<String> = k.pending.iter().filter(|(_, (t, _))| t.elapsed() >= Duration::from_secs(k.cfg.flush_secs)).map(|(t, _)| t.clone()).collect();
+        let old: Vec<String> = k
+            .pending
+            .iter()
+            .filter(|(_, (t, _))| t.elapsed() >= Duration::from_secs(k.cfg.flush_secs))
+            .map(|(t, _)| t.clone())
+            .collect();
         for t in old {
             k.flush_topic(&t);
         }
@@ -424,7 +562,10 @@ fn tick(cfg: &Config) {
         k.total_mib = total;
         let lv = level(total, cfg.warn_mib, cfg.prune_mib, cfg.refuse_mib);
         k.refuse = lv == Level::Refuse;
-        eprintln!("cmqt flush: keep: account {total} MiB (files {files}, kept {kept}, reserved {}) of {}/{}/{}: {lv:?}", cfg.reserved_mib, cfg.warn_mib, cfg.prune_mib, cfg.refuse_mib);
+        eprintln!(
+            "cmqt flush: keep: account {total} MiB (files {files}, kept {kept}, reserved {}) of {}/{}/{}: {lv:?}",
+            cfg.reserved_mib, cfg.warn_mib, cfg.prune_mib, cfg.refuse_mib
+        );
         // From the prune level on, prune until the total is 10 MiB under it.
         pruning |= matches!(lv, Level::Prune | Level::Refuse);
         if !pruning || total < cfg.prune_mib.saturating_sub(10) {
@@ -454,7 +595,16 @@ mod tests {
 
     #[test]
     fn orders_cover_prefix_and_end() {
-        let o = vec![Order { prefix: "public/srv/".into(), end_ms: Some(1000) }, Order { prefix: "internal/".into(), end_ms: None }];
+        let o = vec![
+            Order {
+                prefix: "public/srv/".into(),
+                end_ms: Some(1000),
+            },
+            Order {
+                prefix: "internal/".into(),
+                end_ms: None,
+            },
+        ];
         assert!(covers(&o, "public/srv/cpu", 1000));
         assert!(!covers(&o, "public/srv/cpu", 1001));
         assert!(!covers(&o, "public/other/cpu", 1));
@@ -463,12 +613,26 @@ mod tests {
 
     #[test]
     fn merge_prefers_ram_and_dedupes() {
-        let db = vec![("t/a".to_string(), 1, b"old".to_vec()), ("t/a".to_string(), 2, b"two".to_vec())];
-        let ram = vec![("t/a".to_string(), 2, b"two-ram".to_vec()), ("t/a".to_string(), 3, b"three".to_vec())];
+        let db = vec![
+            ("t/a".to_string(), 1, b"old".to_vec()),
+            ("t/a".to_string(), 2, b"two".to_vec()),
+        ];
+        let ram = vec![
+            ("t/a".to_string(), 2, b"two-ram".to_vec()),
+            ("t/a".to_string(), 3, b"three".to_vec()),
+        ];
         let m = merge(db, ram, 10);
         assert_eq!(m.iter().map(|e| e.1).collect::<Vec<_>>(), vec![1, 2, 3]);
         assert_eq!(m[1].2, b"two-ram");
-        assert_eq!(merge(vec![("t".into(), 1, vec![]), ("t".into(), 2, vec![])], vec![], 1).len(), 1);
+        assert_eq!(
+            merge(
+                vec![("t".into(), 1, vec![]), ("t".into(), 2, vec![])],
+                vec![],
+                1
+            )
+            .len(),
+            1
+        );
     }
 
     #[test]

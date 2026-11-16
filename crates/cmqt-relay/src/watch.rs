@@ -93,14 +93,24 @@ impl Focus {
     pub fn in_focus(&self, now: Instant, device: &str, subsystem: &str) -> bool {
         let k = (device.to_string(), subsystem.to_string());
         self.alive.is_some_and(|a| now.duration_since(a) < ALIVE)
-            && (self.current.contains(&k) || self.dropped.get(&k).is_some_and(|t| now.duration_since(*t) < HOLD))
+            && (self.current.contains(&k)
+                || self
+                    .dropped
+                    .get(&k)
+                    .is_some_and(|t| now.duration_since(*t) < HOLD))
     }
 }
 pub type SharedFocus = Arc<Mutex<Focus>>;
 
 fn parse_focus(payload: &[u8]) -> Option<Vec<(String, String)>> {
     let v: serde_json::Value = serde_json::from_slice(payload).ok()?;
-    Some(v["firing"].as_array()?.iter().filter_map(|p| Some((p[0].as_str()?.to_string(), p[1].as_str()?.to_string()))).collect())
+    Some(
+        v["firing"]
+            .as_array()?
+            .iter()
+            .filter_map(|p| Some((p[0].as_str()?.to_string(), p[1].as_str()?.to_string())))
+            .collect(),
+    )
 }
 
 /// Alert state machine: pure, so it is testable. `tick` returns the message to send, if any.
@@ -110,7 +120,10 @@ pub struct Silence {
 }
 impl Silence {
     pub fn new(limit: Duration) -> Self {
-        Silence { limit, silent: false }
+        Silence {
+            limit,
+            silent: false,
+        }
     }
     /// Forget the alarm state (maintenance): nothing is paged or announced as back while it holds, and
     /// when it ends a box that is still silent is paged again after the threshold.
@@ -137,7 +150,9 @@ fn read_line(path: &str) -> Result<String, String> {
 
 fn notify(cfg: &Config, topic: &str, title: &str, body: &str) {
     let url = format!("{}/{}", cfg.ntfy_base.trim_end_matches('/'), topic);
-    let r = ureq::post(&url).header("Title", title).send(body.as_bytes());
+    let r = ureq::post(&url)
+        .header("Title", title)
+        .send(body.as_bytes());
     if let Err(e) = r {
         eprintln!("cmqt flush: ntfy: {e}");
     }
@@ -153,7 +168,11 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
     let focus = focus.clone();
     std::thread::spawn(move || {
         loop {
-            let mut o = MqttOptions::new(format!("cmqt-watch-{}", std::process::id()), &c2.mqtt_url, 443);
+            let mut o = MqttOptions::new(
+                format!("cmqt-watch-{}", std::process::id()),
+                &c2.mqtt_url,
+                443,
+            );
             o.set_keep_alive(Duration::from_secs(30));
             o.set_credentials(&c2.user, &pw);
             o.set_transport(Transport::wss_with_default_config());
@@ -165,26 +184,39 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
                 match ev {
                     // Live forwards have retain = false; the retained set replayed on subscribe is not news.
                     // The retained current set (read on subscribe): state, but not a heartbeat.
-                    Ok(Event::Incoming(Packet::Publish(p))) if p.retain && p.topic == "internal/_focus" => {
+                    Ok(Event::Incoming(Packet::Publish(p)))
+                        if p.retain && p.topic == "internal/_focus" =>
+                    {
                         crate::http::cache_put(&p.topic, &p.payload);
                         if let Some(pairs) = parse_focus(&p.payload) {
-                            focus.lock().unwrap_or_else(|e| e.into_inner()).restore(Instant::now(), pairs);
+                            focus
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .restore(Instant::now(), pairs);
                         }
                     }
                     Ok(Event::Incoming(Packet::Publish(p))) if !p.retain => {
                         crate::http::cache_put(&p.topic, &p.payload);
                         *l2.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
                         if p.topic.ends_with("/_online") {
-                            focus.lock().unwrap_or_else(|e| e.into_inner()).heartbeat(Instant::now());
+                            focus
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .heartbeat(Instant::now());
                         }
                         if p.topic == "internal/_focus"
                             && let Some(pairs) = parse_focus(&p.payload)
                         {
-                            focus.lock().unwrap_or_else(|e| e.into_inner()).report(Instant::now(), pairs);
+                            focus
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .report(Instant::now(), pairs);
                         }
                     }
                     // Retained tiles and states: the box's current output, stored (deduplicated) too.
-                    Ok(Event::Incoming(Packet::Publish(p))) => crate::http::cache_put(&p.topic, &p.payload),
+                    Ok(Event::Incoming(Packet::Publish(p))) => {
+                        crate::http::cache_put(&p.topic, &p.payload)
+                    }
                     Ok(_) => {}
                     Err(e) => {
                         eprintln!("cmqt flush: watch mqtt: {e}");
@@ -205,8 +237,21 @@ pub fn spawn(cfg: Config, focus: SharedFocus) -> Result<(), String> {
                 continue;
             }
             match s.tick(since) {
-                Some("silent") => notify(&cfg, &topic, "Observability box silent", &format!("Nothing has arrived from the box over the tile link for {} s.", since.as_secs())),
-                Some(_) => notify(&cfg, &topic, "Observability box back", "The box is publishing tiles again."),
+                Some("silent") => notify(
+                    &cfg,
+                    &topic,
+                    "Observability box silent",
+                    &format!(
+                        "Nothing has arrived from the box over the tile link for {} s.",
+                        since.as_secs()
+                    ),
+                ),
+                Some(_) => notify(
+                    &cfg,
+                    &topic,
+                    "Observability box back",
+                    "The box is publishing tiles again.",
+                ),
                 None => {}
             }
         }
@@ -233,7 +278,12 @@ mod tests {
         assert!(!f.in_focus(t0 + s(191), "srv", "cpu"));
         f.report(t0 + s(200), vec![("srv".into(), "cpu".into())]);
         assert!(!f.in_focus(t0 + s(501), "srv", "cpu")); // no _online for 300 s
-        assert_eq!(parse_focus(br#"{"t":1,"firing":[["srv","cpu"],["a","b"]]}"#).unwrap().len(), 2);
+        assert_eq!(
+            parse_focus(br#"{"t":1,"firing":[["srv","cpu"],["a","b"]]}"#)
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -241,12 +291,40 @@ mod tests {
         let t0 = Instant::now();
         let mut f = Focus::default();
         assert_eq!(sd_device_body(&f, t0, "srv"), "[]");
-        f.report(t0, vec![("srv".into(), "cpu".into()), ("srv".into(), "disk-space".into()), ("other".into(), "network".into())]);
+        f.report(
+            t0,
+            vec![
+                ("srv".into(), "cpu".into()),
+                ("srv".into(), "disk-space".into()),
+                ("other".into(), "network".into()),
+            ],
+        );
         let v: serde_json::Value = serde_json::from_str(&sd_device_body(&f, t0, "srv")).unwrap();
-        let got: Vec<(String, String)> = v.as_array().unwrap().iter().map(|g| (g["labels"]["subsystem"].as_str().unwrap().into(), g["labels"]["collector"].as_str().unwrap().into())).collect();
-        assert_eq!(got, vec![("cpu".into(), "cpu".into()), ("cpu".into(), "loadavg".into()), ("disk-space".into(), "filesystem".into())]);
+        let got: Vec<(String, String)> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| {
+                (
+                    g["labels"]["subsystem"].as_str().unwrap().into(),
+                    g["labels"]["collector"].as_str().unwrap().into(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("cpu".into(), "cpu".into()),
+                ("cpu".into(), "loadavg".into()),
+                ("disk-space".into(), "filesystem".into())
+            ]
+        );
         assert_eq!(sd_device_body(&f, t0, "nobody"), "[]");
-        assert!(SUBSYSTEMS.iter().all(|s| COLLECTORS.iter().any(|(c, _)| c == s)));
+        assert!(
+            SUBSYSTEMS
+                .iter()
+                .all(|s| COLLECTORS.iter().any(|(c, _)| c == s))
+        );
     }
 
     #[test]

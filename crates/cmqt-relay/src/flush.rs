@@ -82,25 +82,67 @@ pub struct Config {
     pub prefetch: u16,
     pub metrics_listen: Option<String>,
 }
-fn default_rate() -> f64 { 200.0 }
-fn default_burst() -> f64 { 20.0 }
-fn default_prefetch() -> u16 { 8 }
+fn default_rate() -> f64 {
+    200.0
+}
+fn default_burst() -> f64 {
+    20.0
+}
+fn default_prefetch() -> u16 {
+    8
+}
 
 pub const COUNTERS: &[(&str, &str)] = &[
-    ("cmqt_flush_messages_total", "Queue messages consumed and acknowledged."),
-    ("cmqt_flush_bad_messages_total", "Messages that were not valid OTLP metrics (acknowledged and dropped)."),
-    ("cmqt_flush_points_total", "Data points converted to line protocol."),
-    ("cmqt_flush_skipped_points_total", "Points skipped: no value, NaN or infinity, or the no-recorded-value flag."),
-    ("cmqt_flush_exp_histogram_buckets_dropped_total", "Exponential histogram points sent as count and sum only."),
-    ("cmqt_flush_oversize_lines_total", "Lines longer than a datagram payload, dropped."),
+    (
+        "cmqt_flush_messages_total",
+        "Queue messages consumed and acknowledged.",
+    ),
+    (
+        "cmqt_flush_bad_messages_total",
+        "Messages that were not valid OTLP metrics (acknowledged and dropped).",
+    ),
+    (
+        "cmqt_flush_points_total",
+        "Data points converted to line protocol.",
+    ),
+    (
+        "cmqt_flush_skipped_points_total",
+        "Points skipped: no value, NaN or infinity, or the no-recorded-value flag.",
+    ),
+    (
+        "cmqt_flush_exp_histogram_buckets_dropped_total",
+        "Exponential histogram points sent as count and sum only.",
+    ),
+    (
+        "cmqt_flush_oversize_lines_total",
+        "Lines longer than a datagram payload, dropped.",
+    ),
     ("cmqt_flush_datagrams_total", "Sealed datagrams sent."),
     ("cmqt_flush_bytes_total", "Bytes of sealed datagrams sent."),
-    ("cmqt_flush_send_errors_total", "UDP send failures (the message is requeued)."),
-    ("cmqt_flush_amqp_errors_total", "AMQP session failures (reconnect after a pause)."),
-    ("cmqt_flush_queue_errors_total", "Publishes into the datagram queue that failed (the request got a 503)."),
-    ("cmqt_flush_sd_requests_total", "Foveal discovery requests answered (authorized)."),
-    ("cmqt_flush_http_unauthorized_total", "OTLP/HTTP requests without a valid bearer token."),
-    ("cmqt_flush_http_bytes_in_total", "OTLP/HTTP request body bytes after decompression."),
+    (
+        "cmqt_flush_send_errors_total",
+        "UDP send failures (the message is requeued).",
+    ),
+    (
+        "cmqt_flush_amqp_errors_total",
+        "AMQP session failures (reconnect after a pause).",
+    ),
+    (
+        "cmqt_flush_queue_errors_total",
+        "Publishes into the datagram queue that failed (the request got a 503).",
+    ),
+    (
+        "cmqt_flush_sd_requests_total",
+        "Foveal discovery requests answered (authorized).",
+    ),
+    (
+        "cmqt_flush_http_unauthorized_total",
+        "OTLP/HTTP requests without a valid bearer token.",
+    ),
+    (
+        "cmqt_flush_http_bytes_in_total",
+        "OTLP/HTTP request body bytes after decompression.",
+    ),
 ];
 
 /// HTTP mode is selected by `tokens_file`. `http_listen` defaults to the platform's IP and PORT.
@@ -113,7 +155,11 @@ pub fn resolve_http(cfg: &mut Config) -> Result<bool, String> {
         let (Ok(ip), Ok(port)) = (std::env::var("IP"), std::env::var("PORT")) else {
             return Err("http mode needs http_listen or the platform variables IP and PORT".into());
         };
-        cfg.http_listen = Some(if ip.contains(':') { format!("[{ip}]:{port}") } else { format!("{ip}:{port}") });
+        cfg.http_listen = Some(if ip.contains(':') {
+            format!("[{ip}]:{port}")
+        } else {
+            format!("{ip}:{port}")
+        });
     }
     if let Ok(u) = std::env::var("CMQT_AMQP_URL") {
         cfg.amqp_url = Some(u);
@@ -125,16 +171,28 @@ pub async fn run(mut cfg: Config) -> Result<(), String> {
     if let Ok(u) = std::env::var("CMQT_AMQP_URL") {
         cfg.amqp_url = Some(u);
     }
-    let url = cfg.amqp_url.clone().ok_or("amqp_url missing (config or CMQT_AMQP_URL)")?;
+    let url = cfg
+        .amqp_url
+        .clone()
+        .ok_or("amqp_url missing (config or CMQT_AMQP_URL)")?;
     let mut sealer = Sealer::new(wire::load_key(&cfg.key_file)?);
     let mut bucket = Bucket::new(cfg.rate_pps, cfg.burst);
     let counters = Counters::new(COUNTERS);
     if let Some(m) = &cfg.metrics_listen {
         metrics::serve(m, counters.clone())?;
     }
-    let sock = UdpSocket::bind(if cfg.target.starts_with('[') { "[::]:0" } else { "0.0.0.0:0" }).await.map_err(|e| e.to_string())?;
-    sock.connect(&cfg.target).await.map_err(|e| format!("target {}: {e}", cfg.target))?;
-    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|e| e.to_string())?;
+    let sock = UdpSocket::bind(if cfg.target.starts_with('[') {
+        "[::]:0"
+    } else {
+        "0.0.0.0:0"
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    sock.connect(&cfg.target)
+        .await
+        .map_err(|e| format!("target {}: {e}", cfg.target))?;
+    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|e| e.to_string())?;
     loop {
         let s = session(&cfg, &url, &sock, &mut sealer, &mut bucket, &counters);
         tokio::select! {
@@ -149,12 +207,28 @@ pub async fn run(mut cfg: Config) -> Result<(), String> {
     }
 }
 
-async fn session(cfg: &Config, url: &str, sock: &UdpSocket, sealer: &mut Sealer, bucket: &mut Bucket, c: &Counters) -> Result<(), String> {
-    let conn = Connection::connect(url, ConnectionProperties::default()).await.map_err(|e| e.to_string())?;
+async fn session(
+    cfg: &Config,
+    url: &str,
+    sock: &UdpSocket,
+    sealer: &mut Sealer,
+    bucket: &mut Bucket,
+    c: &Counters,
+) -> Result<(), String> {
+    let conn = Connection::connect(url, ConnectionProperties::default())
+        .await
+        .map_err(|e| e.to_string())?;
     let ch = conn.create_channel().await.map_err(|e| e.to_string())?;
-    ch.basic_qos(cfg.prefetch, BasicQosOptions::default()).await.map_err(|e| e.to_string())?;
+    ch.basic_qos(cfg.prefetch, BasicQosOptions::default())
+        .await
+        .map_err(|e| e.to_string())?;
     let mut consumer = ch
-        .basic_consume(cfg.queue.as_str().into(), "cmqt-flush".into(), BasicConsumeOptions::default(), FieldTable::default())
+        .basic_consume(
+            cfg.queue.as_str().into(),
+            "cmqt-flush".into(),
+            BasicConsumeOptions::default(),
+            FieldTable::default(),
+        )
         .await
         .map_err(|e| e.to_string())?;
     eprintln!("cmqt flush: consuming {}", cfg.queue);
@@ -165,7 +239,9 @@ async fn session(cfg: &Config, url: &str, sock: &UdpSocket, sealer: &mut Sealer,
             Err(e) => {
                 eprintln!("cmqt flush: dropping message: {e}");
                 c.add("cmqt_flush_bad_messages_total", 1);
-                d.ack(BasicAckOptions::default()).await.map_err(|e| e.to_string())?;
+                d.ack(BasicAckOptions::default())
+                    .await
+                    .map_err(|e| e.to_string())?;
                 continue;
             }
         };
@@ -190,11 +266,18 @@ async fn session(cfg: &Config, url: &str, sock: &UdpSocket, sealer: &mut Sealer,
             }
         }
         if failed {
-            d.nack(BasicNackOptions { requeue: true, ..Default::default() }).await.map_err(|e| e.to_string())?;
+            d.nack(BasicNackOptions {
+                requeue: true,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
             tokio::time::sleep(Duration::from_secs(1)).await;
         } else {
             c.add("cmqt_flush_messages_total", 1);
-            d.ack(BasicAckOptions::default()).await.map_err(|e| e.to_string())?;
+            d.ack(BasicAckOptions::default())
+                .await
+                .map_err(|e| e.to_string())?;
         }
     }
     Err("consumer stream ended".into())
@@ -213,7 +296,11 @@ fn record(lines: &[String]) {
     if std::fs::metadata(p).is_ok_and(|m| m.len() >= RECORD_MAX) {
         return;
     }
-    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(p) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(p)
+    {
         let mut buf = String::new();
         for l in lines {
             buf.push_str(l);
@@ -233,7 +320,10 @@ pub fn prepare_zstd(body: &[u8], c: &Counters) -> Result<Vec<Vec<u8>>, String> {
     let (packed, oversize) = influx::pack_zstd(&lines, MAX_PAYLOAD);
     c.add("cmqt_flush_points_total", t.points);
     c.add("cmqt_flush_skipped_points_total", t.skipped);
-    c.add("cmqt_flush_exp_histogram_buckets_dropped_total", t.exp_buckets_dropped);
+    c.add(
+        "cmqt_flush_exp_histogram_buckets_dropped_total",
+        t.exp_buckets_dropped,
+    );
     c.add("cmqt_flush_oversize_lines_total", oversize);
     Ok(packed)
 }
@@ -246,7 +336,10 @@ pub fn prepare(body: &[u8], c: &Counters) -> Result<Vec<Vec<u8>>, String> {
     let (packed, oversize) = influx::pack(&lines, MAX_PAYLOAD);
     c.add("cmqt_flush_points_total", t.points);
     c.add("cmqt_flush_skipped_points_total", t.skipped);
-    c.add("cmqt_flush_exp_histogram_buckets_dropped_total", t.exp_buckets_dropped);
+    c.add(
+        "cmqt_flush_exp_histogram_buckets_dropped_total",
+        t.exp_buckets_dropped,
+    );
     c.add("cmqt_flush_oversize_lines_total", oversize);
     Ok(packed)
 }

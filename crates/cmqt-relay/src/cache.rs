@@ -66,7 +66,12 @@ pub fn seal_entries(open: &[(i64, Vec<u8>)]) -> (i64, i64, usize, Vec<u8>) {
 
 /// Inverse of `seal_entries`.
 pub fn unseal_entries(first_ts: i64, n: usize, data: Vec<u8>) -> Vec<(i64, Vec<u8>)> {
-    unseal(&Block { first_ts, last_ts: first_ts, n, data })
+    unseal(&Block {
+        first_ts,
+        last_ts: first_ts,
+        n,
+        data,
+    })
 }
 
 fn seal(open: &[(i64, Vec<u8>)]) -> Block {
@@ -78,7 +83,12 @@ fn seal(open: &[(i64, Vec<u8>)]) -> Block {
         raw.extend_from_slice(p);
     }
     let data = zstd::bulk::compress(&raw, 3).unwrap_or(raw);
-    Block { first_ts: first, last_ts: open[open.len() - 1].0, n: open.len(), data }
+    Block {
+        first_ts: first,
+        last_ts: open[open.len() - 1].0,
+        n: open.len(),
+        data,
+    }
 }
 
 fn unseal(b: &Block) -> Vec<(i64, Vec<u8>)> {
@@ -96,7 +106,10 @@ fn unseal(b: &Block) -> Vec<(i64, Vec<u8>)> {
 
 impl Cache {
     pub fn new(cap: usize) -> Self {
-        Cache { cap, ..Default::default() }
+        Cache {
+            cap,
+            ..Default::default()
+        }
     }
     pub fn bytes(&self) -> usize {
         self.bytes
@@ -105,7 +118,15 @@ impl Cache {
         self.topics.len()
     }
     pub fn oldest_ms(&self) -> Option<i64> {
-        self.topics.values().filter_map(|t| t.blocks.front().map(|b| b.first_ts).or_else(|| t.open.first().map(|o| o.0))).min()
+        self.topics
+            .values()
+            .filter_map(|t| {
+                t.blocks
+                    .front()
+                    .map(|b| b.first_ts)
+                    .or_else(|| t.open.first().map(|o| o.0))
+            })
+            .min()
     }
 
     /// Store one message of the box (`ts` in ms). A payload equal to the topic's last one is not news
@@ -133,17 +154,29 @@ impl Cache {
         let after = open_bytes(t);
         self.bytes = (self.bytes + after).saturating_sub(before);
         // While the CPU governor throttles, eviction (a scan over all topics) is deferred up to 2% over the cap.
-        let lim = if crate::govern::throttled() { self.cap + self.cap / 50 } else { self.cap };
+        let lim = if crate::govern::throttled() {
+            self.cap + self.cap / 50
+        } else {
+            self.cap
+        };
         while self.bytes > lim && self.evict_one() {}
     }
 
     /// Drop the oldest block of the topic whose oldest block is oldest. A topic with only an open
     /// tail gives that tail up (sealed into nothing) once no block is left anywhere.
     fn evict_one(&mut self) -> bool {
-        let Some(k) = self.topics.iter().filter(|(_, t)| !t.blocks.is_empty()).min_by_key(|(_, t)| t.blocks[0].first_ts).map(|(k, _)| k.clone()) else {
+        let Some(k) = self
+            .topics
+            .iter()
+            .filter(|(_, t)| !t.blocks.is_empty())
+            .min_by_key(|(_, t)| t.blocks[0].first_ts)
+            .map(|(k, _)| k.clone())
+        else {
             return false;
         };
-        let Some(t) = self.topics.get_mut(&k) else { return false };
+        let Some(t) = self.topics.get_mut(&k) else {
+            return false;
+        };
         if let Some(b) = t.blocks.pop_front() {
             self.bytes = self.bytes.saturating_sub(b.data.len() + BLOCK_OVERHEAD);
             self.evicted_blocks += 1;
@@ -153,12 +186,18 @@ impl Cache {
 
     /// Topics that start with `prefix`.
     pub fn topics_with(&self, prefix: &str) -> Vec<String> {
-        self.topics.range(prefix.to_string()..).take_while(|(k, _)| k.starts_with(prefix)).map(|(k, _)| k.clone()).collect()
+        self.topics
+            .range(prefix.to_string()..)
+            .take_while(|(k, _)| k.starts_with(prefix))
+            .map(|(k, _)| k.clone())
+            .collect()
     }
 
     /// Every stored message of one topic, oldest first.
     pub fn entries(&self, topic: &str) -> Vec<(i64, Vec<u8>)> {
-        let Some(t) = self.topics.get(topic) else { return Vec::new() };
+        let Some(t) = self.topics.get(topic) else {
+            return Vec::new();
+        };
         let mut out: Vec<(i64, Vec<u8>)> = t.blocks.iter().flat_map(unseal).collect();
         out.extend(t.open.iter().cloned());
         out
@@ -166,16 +205,36 @@ impl Cache {
 
     /// Messages whose topic starts with `prefix` and whose time lies in `[start, end]` (ms), oldest
     /// first, at most `limit` (the newest ones when more match).
-    pub fn range(&self, prefix: &str, start: i64, end: i64, limit: usize) -> Vec<(String, i64, Vec<u8>)> {
+    pub fn range(
+        &self,
+        prefix: &str,
+        start: i64,
+        end: i64,
+        limit: usize,
+    ) -> Vec<(String, i64, Vec<u8>)> {
         let mut out = Vec::new();
         for (k, t) in self.topics.range(prefix.to_string()..) {
             if !k.starts_with(prefix) {
                 break;
             }
-            for b in t.blocks.iter().filter(|b| b.last_ts >= start && b.first_ts <= end) {
-                out.extend(unseal(b).into_iter().filter(|(ts, _)| *ts >= start && *ts <= end).map(|(ts, p)| (k.clone(), ts, p)));
+            for b in t
+                .blocks
+                .iter()
+                .filter(|b| b.last_ts >= start && b.first_ts <= end)
+            {
+                out.extend(
+                    unseal(b)
+                        .into_iter()
+                        .filter(|(ts, _)| *ts >= start && *ts <= end)
+                        .map(|(ts, p)| (k.clone(), ts, p)),
+                );
             }
-            out.extend(t.open.iter().filter(|(ts, _)| *ts >= start && *ts <= end).map(|(ts, p)| (k.clone(), *ts, p.clone())));
+            out.extend(
+                t.open
+                    .iter()
+                    .filter(|(ts, _)| *ts >= start && *ts <= end)
+                    .map(|(ts, p)| (k.clone(), *ts, p.clone())),
+            );
         }
         out.sort_by_key(|m| m.1);
         if out.len() > limit {
@@ -193,7 +252,11 @@ mod tests {
     fn roundtrip_dedupe_and_prefix() {
         let mut c = Cache::new(1 << 20);
         for i in 0..100 {
-            c.insert("public/srv/cpu", 1000 + i, format!(r#"{{"v":{i}}}"#).as_bytes());
+            c.insert(
+                "public/srv/cpu",
+                1000 + i,
+                format!(r#"{{"v":{i}}}"#).as_bytes(),
+            );
         }
         c.insert("public/srv/cpu", 2000, br#"{"v":99}"#); // same as last: dropped
         c.insert("internal/_focus", 1500, br#"{"firing":[]}"#);
@@ -213,7 +276,11 @@ mod tests {
     fn evicts_oldest_blocks_and_respects_cap() {
         let mut small = Cache::new(4096);
         for i in 0..5000i64 {
-            small.insert("t/a", i, format!(r#"{{"value":{i},"pad":"xxxxxxxxxxxxxxxx{i}"}}"#).as_bytes());
+            small.insert(
+                "t/a",
+                i,
+                format!(r#"{{"value":{i},"pad":"xxxxxxxxxxxxxxxx{i}"}}"#).as_bytes(),
+            );
         }
         assert!(small.bytes() <= 4096 + 2048, "bytes {}", small.bytes());
         assert!(small.evicted_blocks > 0);
@@ -226,7 +293,15 @@ mod tests {
     fn compresses_repetitive_output() {
         let mut c = Cache::new(1 << 24);
         for i in 0..3200i64 {
-            c.insert("public/x", i, format!(r#"{{"tile":"cpu","state":"ok","load":{},"hosts":["a","b","c"]}}"#, i % 7).as_bytes());
+            c.insert(
+                "public/x",
+                i,
+                format!(
+                    r#"{{"tile":"cpu","state":"ok","load":{},"hosts":["a","b","c"]}}"#,
+                    i % 7
+                )
+                .as_bytes(),
+            );
         }
         let raw: usize = 3200 * 70;
         assert!(c.bytes() < raw / 3, "bytes {} raw {raw}", c.bytes());
@@ -239,7 +314,10 @@ mod tests {
             c.insert("public/srv/cpu", i, format!("{{\"v\":{i}}}").as_bytes());
         }
         c.insert("public/web/cpu", 5, b"{}");
-        assert_eq!(c.topics_with("public/srv/"), vec!["public/srv/cpu".to_string()]);
+        assert_eq!(
+            c.topics_with("public/srv/"),
+            vec!["public/srv/cpu".to_string()]
+        );
         let e = c.entries("public/srv/cpu");
         assert_eq!(e.len(), 70);
         assert_eq!(e[69], (69, br#"{"v":69}"#.to_vec()));

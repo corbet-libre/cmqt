@@ -10,7 +10,9 @@ use crate::flush::{COUNTERS, Config, prepare_zstd};
 use crate::metrics::{self, Counters};
 use crate::wire::{self, Bucket, Sealer};
 use futures_lite::StreamExt;
-use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, options::*, types::FieldTable};
+use lapin::{
+    BasicProperties, Channel, Connection, ConnectionProperties, options::*, types::FieldTable,
+};
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,7 +20,8 @@ use tokio::runtime::{Handle, Runtime};
 
 /// Largest body after decompression (an OTLP batch is far below this).
 const MAX_BODY: u64 = 8 * 1024 * 1024;
-static CACHE: std::sync::OnceLock<(std::sync::Mutex<crate::cache::Cache>, String)> = std::sync::OnceLock::new();
+static CACHE: std::sync::OnceLock<(std::sync::Mutex<crate::cache::Cache>, String)> =
+    std::sync::OnceLock::new();
 const DEFAULT_QUEUE: &str = "relay_datagrams";
 
 /// Token file: one `name:token` or bare `token` per line; `#` comments.
@@ -48,7 +51,13 @@ pub fn eq(a: &[u8], b: &[u8]) -> bool {
 pub fn authorized<'a>(header: Option<&str>, tokens: &'a [(String, String)]) -> Option<&'a str> {
     let t = header?.strip_prefix("Bearer ")?;
     // Check every token (no early exit) so timing does not reveal which matched.
-    tokens.iter().fold(None, |hit, (n, k)| if eq(k.as_bytes(), t.trim().as_bytes()) { Some(n.as_str()) } else { hit })
+    tokens.iter().fold(None, |hit, (n, k)| {
+        if eq(k.as_bytes(), t.trim().as_bytes()) {
+            Some(n.as_str())
+        } else {
+            hit
+        }
+    })
 }
 
 /// `/v1/<device>/<subsystem>` or `/sd/v1/<device>/<subsystem>`.
@@ -70,7 +79,10 @@ pub fn sd_device_path(url: &str) -> Option<&str> {
 
 /// Where sealed datagrams go.
 enum Sink {
-    Direct { sock: std::net::UdpSocket, bucket: Bucket },
+    Direct {
+        sock: std::net::UdpSocket,
+        bucket: Bucket,
+    },
     Queue(Publisher),
 }
 
@@ -84,10 +96,14 @@ struct Publisher {
 impl Publisher {
     async fn channel(&mut self) -> Result<&Channel, String> {
         if self.chan.as_ref().is_none_or(|c| !c.status().connected()) {
-            let conn = Connection::connect(&self.url, ConnectionProperties::default()).await.map_err(|e| e.to_string())?;
+            let conn = Connection::connect(&self.url, ConnectionProperties::default())
+                .await
+                .map_err(|e| e.to_string())?;
             let ch = conn.create_channel().await.map_err(|e| e.to_string())?;
             let ch = declare(&conn, &ch, &self.queue).await?;
-            ch.confirm_select(ConfirmSelectOptions::default()).await.map_err(|e| e.to_string())?;
+            ch.confirm_select(ConfirmSelectOptions::default())
+                .await
+                .map_err(|e| e.to_string())?;
             self.chan = Some(ch);
         }
         self.chan.as_ref().ok_or_else(|| "no channel".to_string())
@@ -98,12 +114,22 @@ impl Publisher {
         let r = h.block_on(async {
             let ch = self.channel().await?;
             let confirm = ch
-                .basic_publish("".into(), q.as_str().into(), BasicPublishOptions::default(), sealed, BasicProperties::default().with_delivery_mode(2))
+                .basic_publish(
+                    "".into(),
+                    q.as_str().into(),
+                    BasicPublishOptions::default(),
+                    sealed,
+                    BasicProperties::default().with_delivery_mode(2),
+                )
                 .await
                 .map_err(|e| e.to_string())?
                 .await
                 .map_err(|e| e.to_string())?;
-            if confirm.is_ack() { Ok(()) } else { Err("publish not confirmed".to_string()) }
+            if confirm.is_ack() {
+                Ok(())
+            } else {
+                Err("publish not confirmed".to_string())
+            }
         });
         if r.is_err() {
             self.chan = None;
@@ -118,8 +144,14 @@ const QUEUE_MAX_BYTES: i64 = 64 << 20;
 
 fn queue_args() -> FieldTable {
     let mut t = FieldTable::default();
-    t.insert("x-max-length-bytes".into(), lapin::types::AMQPValue::LongLongInt(QUEUE_MAX_BYTES));
-    t.insert("x-overflow".into(), lapin::types::AMQPValue::LongString("drop-head".into()));
+    t.insert(
+        "x-max-length-bytes".into(),
+        lapin::types::AMQPValue::LongLongInt(QUEUE_MAX_BYTES),
+    );
+    t.insert(
+        "x-overflow".into(),
+        lapin::types::AMQPValue::LongString("drop-head".into()),
+    );
     t
 }
 
@@ -128,14 +160,23 @@ fn queue_args() -> FieldTable {
 /// (PRECONDITION_FAILED, which closes the channel) deletes the queue once and declares it anew.
 /// Returns the channel to use afterwards (a new one after a recreate).
 async fn declare(conn: &Connection, ch: &Channel, queue: &str) -> Result<Channel, String> {
-    let opts = QueueDeclareOptions { durable: true, ..Default::default() };
+    let opts = QueueDeclareOptions {
+        durable: true,
+        ..Default::default()
+    };
     match ch.queue_declare(queue.into(), opts, queue_args()).await {
         Ok(_) => Ok(ch.clone()),
         Err(e) if e.to_string().contains("PRECONDITION") || e.to_string().contains("406") => {
-            eprintln!("cmqt flush: queue {queue} has other arguments; deleting and declaring it again once");
+            eprintln!(
+                "cmqt flush: queue {queue} has other arguments; deleting and declaring it again once"
+            );
             let ch2 = conn.create_channel().await.map_err(|e| e.to_string())?;
-            ch2.queue_delete(queue.into(), QueueDeleteOptions::default()).await.map_err(|e| e.to_string())?;
-            ch2.queue_declare(queue.into(), opts, queue_args()).await.map_err(|e| e.to_string())?;
+            ch2.queue_delete(queue.into(), QueueDeleteOptions::default())
+                .await
+                .map_err(|e| e.to_string())?;
+            ch2.queue_declare(queue.into(), opts, queue_args())
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(ch2)
         }
         Err(e) => Err(e.to_string()),
@@ -143,9 +184,23 @@ async fn declare(conn: &Connection, ch: &Channel, queue: &str) -> Result<Channel
 }
 
 /// Drain the datagram queue: pace, send the already sealed bytes, acknowledge.
-async fn drain(url: String, queue: String, target: String, rate: f64, burst: f64, prefetch: u16, c: Arc<Counters>) {
+async fn drain(
+    url: String,
+    queue: String,
+    target: String,
+    rate: f64,
+    burst: f64,
+    prefetch: u16,
+    c: Arc<Counters>,
+) {
     let mut bucket = Bucket::new(rate, burst);
-    let sock = match tokio::net::UdpSocket::bind(if target.starts_with('[') { "[::]:0" } else { "0.0.0.0:0" }).await {
+    let sock = match tokio::net::UdpSocket::bind(if target.starts_with('[') {
+        "[::]:0"
+    } else {
+        "0.0.0.0:0"
+    })
+    .await
+    {
         Ok(s) => s,
         Err(e) => return eprintln!("cmqt flush: drain bind: {e}"),
     };
@@ -154,11 +209,23 @@ async fn drain(url: String, queue: String, target: String, rate: f64, burst: f64
     }
     loop {
         let r: Result<(), String> = async {
-            let conn = Connection::connect(&url, ConnectionProperties::default()).await.map_err(|e| e.to_string())?;
+            let conn = Connection::connect(&url, ConnectionProperties::default())
+                .await
+                .map_err(|e| e.to_string())?;
             let ch = conn.create_channel().await.map_err(|e| e.to_string())?;
             let ch = declare(&conn, &ch, &queue).await?;
-            ch.basic_qos(prefetch, BasicQosOptions::default()).await.map_err(|e| e.to_string())?;
-            let mut consumer = ch.basic_consume(queue.as_str().into(), "cmqt-drain".into(), BasicConsumeOptions::default(), FieldTable::default()).await.map_err(|e| e.to_string())?;
+            ch.basic_qos(prefetch, BasicQosOptions::default())
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut consumer = ch
+                .basic_consume(
+                    queue.as_str().into(),
+                    "cmqt-drain".into(),
+                    BasicConsumeOptions::default(),
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
             eprintln!("cmqt flush: draining {queue}");
             while let Some(d) = consumer.next().await {
                 let d = d.map_err(|e| e.to_string())?;
@@ -170,17 +237,26 @@ async fn drain(url: String, queue: String, target: String, rate: f64, burst: f64
                     Ok(_) => {
                         c.add("cmqt_flush_datagrams_total", 1);
                         c.add("cmqt_flush_bytes_total", d.data.len() as u64);
-                        d.ack(BasicAckOptions::default()).await.map_err(|e| e.to_string())?;
+                        d.ack(BasicAckOptions::default())
+                            .await
+                            .map_err(|e| e.to_string())?;
                     }
                     // ICMP port unreachable from a stopped receiver: lost like any datagram in an outage (counted).
                     Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
                         c.add("cmqt_flush_send_errors_total", 1);
-                        d.ack(BasicAckOptions::default()).await.map_err(|e| e.to_string())?;
+                        d.ack(BasicAckOptions::default())
+                            .await
+                            .map_err(|e| e.to_string())?;
                     }
                     Err(e) => {
                         eprintln!("cmqt flush: send: {e}");
                         c.add("cmqt_flush_send_errors_total", 1);
-                        d.nack(BasicNackOptions { requeue: true, ..Default::default() }).await.map_err(|e| e.to_string())?;
+                        d.nack(BasicNackOptions {
+                            requeue: true,
+                            ..Default::default()
+                        })
+                        .await
+                        .map_err(|e| e.to_string())?;
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
@@ -189,7 +265,10 @@ async fn drain(url: String, queue: String, target: String, rate: f64, burst: f64
         }
         .await;
         c.add("cmqt_flush_amqp_errors_total", 1);
-        eprintln!("cmqt flush: drain ended: {}; reconnecting in 5 s", r.err().unwrap_or_default());
+        eprintln!(
+            "cmqt flush: drain ended: {}; reconnecting in 5 s",
+            r.err().unwrap_or_default()
+        );
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -207,15 +286,44 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
         metrics::serve(m, counters.clone())?;
     }
     let sealer = Sealer::new(wire::load_key(&cfg.key_file)?);
-    let rt: Runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().map_err(|e| e.to_string())?;
+    let rt: Runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
     let sink = if let Some(url) = cfg.amqp_url.take() {
-        let queue = cfg.datagram_queue.clone().unwrap_or_else(|| DEFAULT_QUEUE.into());
-        rt.spawn(drain(url.clone(), queue.clone(), cfg.target.clone(), cfg.rate_pps, cfg.burst, cfg.prefetch, counters.clone()));
-        Sink::Queue(Publisher { handle: rt.handle().clone(), url, queue, chan: None })
+        let queue = cfg
+            .datagram_queue
+            .clone()
+            .unwrap_or_else(|| DEFAULT_QUEUE.into());
+        rt.spawn(drain(
+            url.clone(),
+            queue.clone(),
+            cfg.target.clone(),
+            cfg.rate_pps,
+            cfg.burst,
+            cfg.prefetch,
+            counters.clone(),
+        ));
+        Sink::Queue(Publisher {
+            handle: rt.handle().clone(),
+            url,
+            queue,
+            chan: None,
+        })
     } else {
-        let sock = std::net::UdpSocket::bind(if cfg.target.starts_with('[') { "[::]:0" } else { "0.0.0.0:0" }).map_err(|e| e.to_string())?;
-        sock.connect(&cfg.target).map_err(|e| format!("target {}: {e}", cfg.target))?;
-        Sink::Direct { sock, bucket: Bucket::new(cfg.rate_pps, cfg.burst) }
+        let sock = std::net::UdpSocket::bind(if cfg.target.starts_with('[') {
+            "[::]:0"
+        } else {
+            "0.0.0.0:0"
+        })
+        .map_err(|e| e.to_string())?;
+        sock.connect(&cfg.target)
+            .map_err(|e| format!("target {}: {e}", cfg.target))?;
+        Sink::Direct {
+            sock,
+            bucket: Bucket::new(cfg.rate_pps, cfg.burst),
+        }
     };
     wire::set_format(cfg.datagram_format)?;
     if let Some(m) = &cfg.maintenance_file {
@@ -225,8 +333,18 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
         crate::flush::set_record(r);
     }
     if cfg.screen_password_file.is_some() {
-        let pw = std::fs::read_to_string(cfg.screen_password_file.as_deref().ok_or("screen_password_file missing")?).map_err(|e| e.to_string())?;
-        let _ = CACHE.set((Mutex::new(crate::cache::Cache::new((cfg.cache_floor_mib << 20).max(1 << 20))), pw.trim().to_string()));
+        let pw = std::fs::read_to_string(
+            cfg.screen_password_file
+                .as_deref()
+                .ok_or("screen_password_file missing")?,
+        )
+        .map_err(|e| e.to_string())?;
+        let _ = CACHE.set((
+            Mutex::new(crate::cache::Cache::new(
+                (cfg.cache_floor_mib << 20).max(1 << 20),
+            )),
+            pw.trim().to_string(),
+        ));
     }
     if let Some(kc) = cfg.keep.clone() {
         crate::keep::init(kc)?;
@@ -239,7 +357,12 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     // gets the RAM that is left below the total target. Every 5 minutes both go into the log
     // together with this process's resident memory and its peak.
     {
-        let (cpu_t, ram_t, floor, ceil) = (cfg.cpu_target, cfg.ram_target_mib << 20, cfg.cache_floor_mib << 20, cfg.cache_mib << 20);
+        let (cpu_t, ram_t, floor, ceil) = (
+            cfg.cpu_target,
+            cfg.ram_target_mib << 20,
+            cfg.cache_floor_mib << 20,
+            cfg.cache_mib << 20,
+        );
         std::thread::spawn(move || {
             let t0 = std::time::Instant::now();
             let mut win = crate::govern::CpuWindow::new(30.0);
@@ -249,32 +372,62 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
                 rss_peak = rss_peak.max(rss);
                 win.push(t0.elapsed().as_secs_f64(), cpu);
                 let share = win.share();
-                let d = crate::govern::next_delay_ms(crate::govern::DELAY_MS.load(std::sync::atomic::Ordering::Relaxed), share, cpu_t);
+                let d = crate::govern::next_delay_ms(
+                    crate::govern::DELAY_MS.load(std::sync::atomic::Ordering::Relaxed),
+                    share,
+                    cpu_t,
+                );
                 crate::govern::DELAY_MS.store(d, std::sync::atomic::Ordering::Relaxed);
                 let mut ch = String::new();
                 if let Some((c, _)) = CACHE.get() {
                     let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
                     g.cap = crate::govern::cache_cap(rss, g.bytes(), ram_t, floor, ceil);
-                    ch = format!(" | cache {} B (cap {}), {} topics, oldest {:?} ms, evicted {}", g.bytes(), g.cap, g.series_count(), g.oldest_ms(), g.evicted_blocks);
+                    ch = format!(
+                        " | cache {} B (cap {}), {} topics, oldest {:?} ms, evicted {}",
+                        g.bytes(),
+                        g.cap,
+                        g.series_count(),
+                        g.oldest_ms(),
+                        g.evicted_blocks
+                    );
                 }
                 if n % 60 == 0 {
                     let own = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-                    let f = |k: &str| own.lines().find(|l| l.starts_with(k)).unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
-                    eprintln!("cmqt flush: cpu {share:.3} of {cpu_t} (delay {d} ms) | total rss {} B of {ram_t}, peak {rss_peak} | self {} | {}{ch}", rss, f("VmRSS:"), f("VmHWM:"));
+                    let f = |k: &str| {
+                        own.lines()
+                            .find(|l| l.starts_with(k))
+                            .unwrap_or("")
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    };
+                    eprintln!(
+                        "cmqt flush: cpu {share:.3} of {cpu_t} (delay {d} ms) | total rss {} B of {ram_t}, peak {rss_peak} | self {} | {}{ch}",
+                        rss,
+                        f("VmRSS:"),
+                        f("VmHWM:")
+                    );
                 }
                 n += 1;
                 std::thread::sleep(Duration::from_secs(5));
             }
         });
     }
-    let server = tiny_http::Server::http(&listen).map_err(|e| format!("http listen {listen}: {e}"))?;
+    let server =
+        tiny_http::Server::http(&listen).map_err(|e| format!("http listen {listen}: {e}"))?;
     eprintln!("cmqt flush: OTLP/HTTP on {listen}");
     let server = Arc::new(server);
     let state = Arc::new(Mutex::new(State { sealer, sink }));
     let tokens = Arc::new(tokens);
     let mut hs = Vec::new();
     for _ in 0..3 {
-        let (server, state, tokens, c, focus) = (server.clone(), state.clone(), tokens.clone(), counters.clone(), focus.clone());
+        let (server, state, tokens, c, focus) = (
+            server.clone(),
+            state.clone(),
+            tokens.clone(),
+            counters.clone(),
+            focus.clone(),
+        );
         hs.push(std::thread::spawn(move || {
             for rq in server.incoming_requests() {
                 handle(rq, &tokens, &state, &c, &focus);
@@ -287,17 +440,43 @@ pub fn run(mut cfg: Config) -> Result<(), String> {
     Err("http server ended".into())
 }
 
-fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex<State>, c: &Counters, focus: &crate::watch::SharedFocus) {
-    let hdr = |n: &'static str| rq.headers().iter().find(|h| h.field.equiv(n)).map(|h| h.value.as_str().to_string());
+fn handle(
+    mut rq: tiny_http::Request,
+    tokens: &[(String, String)],
+    state: &Mutex<State>,
+    c: &Counters,
+    focus: &crate::watch::SharedFocus,
+) {
+    let hdr = |n: &'static str| {
+        rq.headers()
+            .iter()
+            .find(|h| h.field.equiv(n))
+            .map(|h| h.value.as_str().to_string())
+    };
     let auth = hdr("Authorization");
     let gz = hdr("Content-Encoding").is_some_and(|e| e.eq_ignore_ascii_case("gzip"));
-    let path_ok = rq.url().split('?').next().is_some_and(|p| p.ends_with("/v1/metrics"));
-    if let Some(p) = rq.url().split('?').next().filter(|p| p.ends_with("/maintenance")) {
+    let path_ok = rq
+        .url()
+        .split('?')
+        .next()
+        .is_some_and(|p| p.ends_with("/v1/metrics"));
+    if let Some(p) = rq
+        .url()
+        .split('?')
+        .next()
+        .filter(|p| p.ends_with("/maintenance"))
+    {
         let admin = p.ends_with("/admin/maintenance");
         maintenance_request(rq, auth.as_deref(), admin);
         return;
     }
-    if crate::keep::enabled() && rq.url().split('?').next().is_some_and(|p| p.ends_with("/keep") || p.ends_with("/keep/export")) {
+    if crate::keep::enabled()
+        && rq
+            .url()
+            .split('?')
+            .next()
+            .is_some_and(|p| p.ends_with("/keep") || p.ends_with("/keep/export"))
+    {
         keep_request(rq, auth.as_deref());
         return;
     }
@@ -314,7 +493,9 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
         return;
     }
     let who = authorized(auth.as_deref(), tokens);
-    let sd = sd_path(rq.url()).map(|(d, s)| (d.to_string(), Some(s.to_string()))).or_else(|| sd_device_path(rq.url()).map(|d| (d.to_string(), None)));
+    let sd = sd_path(rq.url())
+        .map(|(d, s)| (d.to_string(), Some(s.to_string())))
+        .or_else(|| sd_device_path(rq.url()).map(|d| (d.to_string(), None)));
     if who.is_some()
         && *rq.method() == tiny_http::Method::Get
         && let Some((device, sub)) = sd
@@ -322,10 +503,24 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
         let (code, body) = if who != Some(device.as_str()) {
             (403, String::new())
         } else if sub.is_none() {
-            (200, crate::watch::sd_device_body(&focus.lock().unwrap_or_else(|e| e.into_inner()), std::time::Instant::now(), &device))
-        } else if !sub.as_deref().is_some_and(|s| crate::watch::SUBSYSTEMS.contains(&s)) {
+            (
+                200,
+                crate::watch::sd_device_body(
+                    &focus.lock().unwrap_or_else(|e| e.into_inner()),
+                    std::time::Instant::now(),
+                    &device,
+                ),
+            )
+        } else if !sub
+            .as_deref()
+            .is_some_and(|s| crate::watch::SUBSYSTEMS.contains(&s))
+        {
             (404, String::new())
-        } else if focus.lock().unwrap_or_else(|e| e.into_inner()).in_focus(std::time::Instant::now(), &device, sub.as_deref().unwrap_or_default()) {
+        } else if focus.lock().unwrap_or_else(|e| e.into_inner()).in_focus(
+            std::time::Instant::now(),
+            &device,
+            sub.as_deref().unwrap_or_default(),
+        ) {
             (200, r#"[{"targets":["focus"],"labels":{}}]"#.to_string())
         } else {
             (200, "[]".to_string())
@@ -353,7 +548,9 @@ fn handle(mut rq: tiny_http::Request, tokens: &[(String, String)], state: &Mutex
         }
         let mut body = Vec::new();
         let r = if gz {
-            flate2::read::GzDecoder::new(rq.as_reader()).take(MAX_BODY + 1).read_to_end(&mut body)
+            flate2::read::GzDecoder::new(rq.as_reader())
+                .take(MAX_BODY + 1)
+                .read_to_end(&mut body)
         } else {
             rq.as_reader().take(MAX_BODY + 1).read_to_end(&mut body)
         };
@@ -394,12 +591,20 @@ fn keep_request(mut rq: tiny_http::Request, auth: Option<&str>) {
     if path.ends_with("/keep/export") {
         let prefix = qparam(&url, "topic").unwrap_or_default();
         let start = qparam(&url, "start").and_then(|v| ts_ms(&v)).unwrap_or(0);
-        let end = qparam(&url, "end").and_then(|v| ts_ms(&v)).unwrap_or(i64::MAX);
+        let end = qparam(&url, "end")
+            .and_then(|v| ts_ms(&v))
+            .unwrap_or(i64::MAX);
         let mut hs = Vec::new();
         if let Ok(h) = tiny_http::Header::from_bytes("Content-Type", "application/x-ndjson") {
             hs.push(h);
         }
-        let r = tiny_http::Response::new(tiny_http::StatusCode(200), hs, crate::keep::Export::new(prefix, start, end), None, None);
+        let r = tiny_http::Response::new(
+            tiny_http::StatusCode(200),
+            hs,
+            crate::keep::Export::new(prefix, start, end),
+            None,
+            None,
+        );
         let _ = rq.respond(r);
         return;
     }
@@ -408,7 +613,10 @@ fn keep_request(mut rq: tiny_http::Request, auth: Option<&str>) {
         tiny_http::Method::Delete => match qparam(&url, "prefix") {
             Some(p) if !p.is_empty() => match crate::keep::remove_order(&p) {
                 Ok(()) => json(200, r#"{"status":"ok"}"#.into()),
-                Err((c, e)) => json(c, serde_json::json!({"status":"error","error":e}).to_string()),
+                Err((c, e)) => json(
+                    c,
+                    serde_json::json!({"status":"error","error":e}).to_string(),
+                ),
             },
             _ => json(400, r#"{"status":"error","error":"prefix"}"#.into()),
         },
@@ -420,8 +628,14 @@ fn keep_request(mut rq: tiny_http::Request, auth: Option<&str>) {
             let end = v["end"].as_f64().map(|s| (s * 1000.0) as i64);
             match (prefix.is_empty(), CACHE.get()) {
                 (false, Some((cache, _))) => match crate::keep::add_order(&prefix, end, cache) {
-                    Ok(n) => json(200, serde_json::json!({"status":"ok","blocks_written":n}).to_string()),
-                    Err((c, e)) => json(c, serde_json::json!({"status":"error","error":e}).to_string()),
+                    Ok(n) => json(
+                        200,
+                        serde_json::json!({"status":"ok","blocks_written":n}).to_string(),
+                    ),
+                    Err((c, e)) => json(
+                        c,
+                        serde_json::json!({"status":"error","error":e}).to_string(),
+                    ),
                 },
                 _ => json(400, r#"{"status":"error","error":"prefix"}"#.into()),
             }
@@ -444,7 +658,11 @@ fn pct_decode(s: &str) -> String {
     while i < b.len() {
         match b[i] {
             b'%' if i + 2 < b.len() => {
-                if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) { o.push(v); i += 3; continue; }
+                if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                    o.push(v);
+                    i += 3;
+                    continue;
+                }
                 o.push(b'%');
             }
             b'+' => o.push(b' '),
@@ -461,11 +679,19 @@ fn ts_ms(v: &str) -> Option<i64> {
 /// Feed one message of the box (tile link) into the history cache, if it is on.
 pub fn cache_put(topic: &str, payload: &[u8]) {
     if let Some((c, _)) = CACHE.get() {
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
-        c.lock().unwrap_or_else(|e| e.into_inner()).insert(topic, ts, payload);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        c.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(topic, ts, payload);
     }
     if crate::keep::enabled() {
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
         crate::keep::observe(topic, ts, payload);
     }
 }
@@ -480,7 +706,10 @@ pub fn maintenance() -> Option<(String, i64)> {
 
 fn maint_json() -> String {
     match maintenance() {
-        Some((r, s)) => serde_json::json!({"maintenance": {"reason": r, "since": s as f64 / 1000.0}}).to_string(),
+        Some((r, s)) => {
+            serde_json::json!({"maintenance": {"reason": r, "since": s as f64 / 1000.0}})
+                .to_string()
+        }
         None => r#"{"maintenance":null}"#.to_string(),
     }
 }
@@ -489,7 +718,9 @@ fn maint_set(v: Option<(String, i64)>) {
     *MAINT.lock().unwrap_or_else(|e| e.into_inner()) = v.clone();
     if let Some(p) = MAINT_FILE.get() {
         let _ = match v {
-            Some((r, s)) => std::fs::write(p, serde_json::json!({"reason": r, "since": s}).to_string()),
+            Some((r, s)) => {
+                std::fs::write(p, serde_json::json!({"reason": r, "since": s}).to_string())
+            }
             None => std::fs::remove_file(p).or(Ok(())),
         };
     }
@@ -501,7 +732,8 @@ fn maint_load(path: &str) {
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(&s)
         && let Some(r) = v["reason"].as_str()
     {
-        *MAINT.lock().unwrap_or_else(|e| e.into_inner()) = Some((r.to_string(), v["since"].as_i64().unwrap_or(0)));
+        *MAINT.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((r.to_string(), v["since"].as_i64().unwrap_or(0)));
     }
 }
 
@@ -537,9 +769,16 @@ fn maintenance_request(mut rq: tiny_http::Request, auth: Option<&str>, admin: bo
             let mut body = String::new();
             let _ = rq.as_reader().take(4096).read_to_string(&mut body);
             let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-            match v["reason"].as_str().map(str::trim).filter(|r| !r.is_empty() && r.len() <= 200) {
+            match v["reason"]
+                .as_str()
+                .map(str::trim)
+                .filter(|r| !r.is_empty() && r.len() <= 200)
+            {
                 Some(r) => {
-                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
                     maint_set(Some((r.to_string(), now)));
                     eprintln!("cmqt flush: maintenance set: {r}");
                     json(200, maint_json())
@@ -553,38 +792,74 @@ fn maintenance_request(mut rq: tiny_http::Request, auth: Option<&str>, admin: bo
 }
 
 pub fn cache_topics(prefix: &str) -> Vec<String> {
-    CACHE.get().map(|(c, _)| c.lock().unwrap_or_else(|e| e.into_inner()).topics_with(prefix)).unwrap_or_default()
+    CACHE
+        .get()
+        .map(|(c, _)| {
+            c.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .topics_with(prefix)
+        })
+        .unwrap_or_default()
 }
 
 pub fn cache_entries(topic: &str) -> Vec<(i64, Vec<u8>)> {
-    CACHE.get().map(|(c, _)| c.lock().unwrap_or_else(|e| e.into_inner()).entries(topic)).unwrap_or_default()
+    CACHE
+        .get()
+        .map(|(c, _)| c.lock().unwrap_or_else(|e| e.into_inner()).entries(topic))
+        .unwrap_or_default()
 }
 
 /// `GET .../api/v1/messages?topic=<prefix>&start=<s>&end=<s>&limit=<n>`: the box's output history as
 /// `{"status":"success","data":[{"topic","t":<s>,"payload":<json or string>}]}`; HTTP Basic, user `screen`.
-fn messages(url: &str, auth: Option<&str>, cache: &Mutex<crate::cache::Cache>, pw: &str) -> (u16, String) {
+fn messages(
+    url: &str,
+    auth: Option<&str>,
+    cache: &Mutex<crate::cache::Cache>,
+    pw: &str,
+) -> (u16, String) {
     use base64::Engine;
     let ok = auth
         .and_then(|a| a.strip_prefix("Basic "))
-        .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b.trim()).ok())
+        .and_then(|b| {
+            base64::engine::general_purpose::STANDARD
+                .decode(b.trim())
+                .ok()
+        })
         .is_some_and(|d| eq(&d, format!("screen:{pw}").as_bytes()));
     if !ok {
         return (401, String::new());
     }
     let topic = qparam(url, "topic").unwrap_or_default();
     let start = qparam(url, "start").and_then(|v| ts_ms(&v)).unwrap_or(0);
-    let end = qparam(url, "end").and_then(|v| ts_ms(&v)).unwrap_or(i64::MAX);
-    let limit = qparam(url, "limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1000).min(10_000);
-    let ram = cache.lock().unwrap_or_else(|e| e.into_inner()).range(&topic, start, end, limit);
-    let r = if crate::keep::enabled() { crate::keep::merge(crate::keep::db_range(&topic, start, end), ram, limit) } else { ram };
+    let end = qparam(url, "end")
+        .and_then(|v| ts_ms(&v))
+        .unwrap_or(i64::MAX);
+    let limit = qparam(url, "limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1000)
+        .min(10_000);
+    let ram = cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .range(&topic, start, end, limit);
+    let r = if crate::keep::enabled() {
+        crate::keep::merge(crate::keep::db_range(&topic, start, end), ram, limit)
+    } else {
+        ram
+    };
     let data: Vec<serde_json::Value> = r
         .into_iter()
         .map(|(k, t, p)| {
-            let payload = serde_json::from_slice(&p).unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(&p).into_owned()));
+            let payload = serde_json::from_slice(&p).unwrap_or_else(|_| {
+                serde_json::Value::String(String::from_utf8_lossy(&p).into_owned())
+            });
             serde_json::json!({"topic": k, "t": t as f64 / 1000.0, "payload": payload})
         })
         .collect();
-    (200, serde_json::json!({"status":"success","data":data}).to_string())
+    (
+        200,
+        serde_json::json!({"status":"success","data":data}).to_string(),
+    )
 }
 
 /// Seal and hand over, in order: sealing and publishing share one lock so the queue keeps the
@@ -612,7 +887,9 @@ fn send(dg: &[Vec<u8>], state: &Mutex<State>, c: &Counters) -> u16 {
                         c.add("cmqt_flush_datagrams_total", 1);
                         c.add("cmqt_flush_bytes_total", sealed.len() as u64);
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => c.add("cmqt_flush_send_errors_total", 1),
+                    Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                        c.add("cmqt_flush_send_errors_total", 1)
+                    }
                     Err(e) => {
                         eprintln!("cmqt flush: send: {e}");
                         c.add("cmqt_flush_send_errors_total", 1);
@@ -641,7 +918,10 @@ mod tests {
     #[test]
     fn sd_paths() {
         assert_eq!(sd_path("/v1/srv/cpu"), Some(("srv", "cpu")));
-        assert_eq!(sd_path("/sd/v1/office.mac.vm.srv/disk-io?x=1"), Some(("office.mac.vm.srv", "disk-io")));
+        assert_eq!(
+            sd_path("/sd/v1/office.mac.vm.srv/disk-io?x=1"),
+            Some(("office.mac.vm.srv", "disk-io"))
+        );
         assert_eq!(sd_path("/v1/metrics"), None);
         assert_eq!(sd_path("/v1/a/b/c"), None);
         assert_eq!(sd_device_path("/sd/v1/srv?x=1"), Some("srv"));

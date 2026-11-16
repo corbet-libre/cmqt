@@ -11,7 +11,10 @@
 //! plaintext = InfluxDB line protocol, newline terminated lines
 //! ```
 
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
+use chacha20poly1305::{
+    ChaCha20Poly1305, KeyInit,
+    aead::{Aead, Payload},
+};
 use std::collections::VecDeque;
 use std::os::unix::fs::PermissionsExt;
 
@@ -61,7 +64,9 @@ fn compress_dict(raw: &[u8]) -> Vec<u8> {
         if c.is_none() {
             *c = zstd::bulk::Compressor::with_dictionary(LEVEL, DICT).ok();
         }
-        c.as_mut().and_then(|c| c.compress(raw).ok()).unwrap_or_default()
+        c.as_mut()
+            .and_then(|c| c.compress(raw).ok())
+            .unwrap_or_default()
     })
 }
 
@@ -90,7 +95,9 @@ pub fn load_key(path: &str) -> Result<ChaCha20Poly1305, String> {
     // systemd credentials (LoadCredential=) are root-owned 0440 inside a 0700 per-service directory.
     let credential = path.starts_with("/run/credentials/") && mode == 0o440;
     if mode & 0o177 != 0 && !credential {
-        return Err(format!("key file {path} has mode {mode:o}; it must be 0600 (no group/other access)"));
+        return Err(format!(
+            "key file {path} has mode {mode:o}; it must be 0600 (no group/other access)"
+        ));
     }
     let raw = std::fs::read(path).map_err(|e| format!("key file {path}: {e}"))?;
     let key: Vec<u8> = if raw.len() == 32 {
@@ -99,10 +106,15 @@ pub fn load_key(path: &str) -> Result<ChaCha20Poly1305, String> {
         let t = String::from_utf8_lossy(&raw);
         let t = t.trim();
         if t.len() != 64 || !t.is_ascii() {
-            return Err(format!("key file {path}: expected 32 raw bytes or 64 hex characters"));
+            return Err(format!(
+                "key file {path}: expected 32 raw bytes or 64 hex characters"
+            ));
         }
         (0..32)
-            .map(|i| u8::from_str_radix(&t[2 * i..2 * i + 2], 16).map_err(|_| format!("key file {path}: bad hex")))
+            .map(|i| {
+                u8::from_str_radix(&t[2 * i..2 * i + 2], 16)
+                    .map_err(|_| format!("key file {path}: bad hex"))
+            })
             .collect::<Result<_, _>>()?
     };
     ChaCha20Poly1305::new_from_slice(&key).map_err(|e| e.to_string())
@@ -119,14 +131,22 @@ impl Sealer {
         Self::with_prefix(aead, rand::random::<u32>())
     }
     pub fn with_prefix(aead: ChaCha20Poly1305, prefix: u32) -> Self {
-        Sealer { aead, prefix, seq: 0 }
+        Sealer {
+            aead,
+            prefix,
+            seq: 0,
+        }
     }
     pub fn seal(&mut self, payload: &[u8]) -> Vec<u8> {
         self.seal_version(VERSION, payload)
     }
     /// Seal an already compressed payload as version 2.
     pub fn seal_zstd(&mut self, compressed: &[u8]) -> Vec<u8> {
-        let v = if FORMAT_V3.load(std::sync::atomic::Ordering::Relaxed) { VERSION_DICT } else { VERSION_ZSTD };
+        let v = if FORMAT_V3.load(std::sync::atomic::Ordering::Relaxed) {
+            VERSION_DICT
+        } else {
+            VERSION_ZSTD
+        };
         self.seal_version(v, compressed)
     }
     fn seal_version(&mut self, version: u8, payload: &[u8]) -> Vec<u8> {
@@ -137,7 +157,13 @@ impl Sealer {
         self.seq += 1;
         let ct = self
             .aead
-            .encrypt(&nonce(&hdr), Payload { msg: payload, aad: &hdr })
+            .encrypt(
+                &nonce(&hdr),
+                Payload {
+                    msg: payload,
+                    aad: &hdr,
+                },
+            )
             .expect("chacha20poly1305 encrypt cannot fail for small input");
         let mut out = Vec::with_capacity(HEADER + ct.len());
         out.extend_from_slice(&hdr);
@@ -175,12 +201,19 @@ pub fn open(aead: &ChaCha20Poly1305, d: &[u8]) -> Result<Opened, OpenError> {
         return Err(OpenError::Version(d[0]));
     }
     let mut payload = aead
-        .decrypt(&nonce(&d[..HEADER]), Payload { msg: &d[HEADER..], aad: &d[..HEADER] })
+        .decrypt(
+            &nonce(&d[..HEADER]),
+            Payload {
+                msg: &d[HEADER..],
+                aad: &d[..HEADER],
+            },
+        )
         .map_err(|_| OpenError::Auth)?;
     if d[0] == VERSION_DICT {
         payload = decompress(&payload, MAX_DECOMPRESSED).map_err(|_| OpenError::Decompress)?;
     } else if d[0] == VERSION_ZSTD {
-        payload = zstd::bulk::decompress(&payload, MAX_DECOMPRESSED).map_err(|_| OpenError::Decompress)?;
+        payload = zstd::bulk::decompress(&payload, MAX_DECOMPRESSED)
+            .map_err(|_| OpenError::Decompress)?;
     }
     Ok(Opened {
         prefix: u32::from_be_bytes(d[1..5].try_into().unwrap()),
@@ -222,12 +255,20 @@ impl Replay {
             if self.windows.len() == MAX_PREFIXES {
                 self.windows.pop_front();
             }
-            self.windows.push_back(Window { prefix, highest: seq, seen: 1 });
+            self.windows.push_back(Window {
+                prefix,
+                highest: seq,
+                seen: 1,
+            });
             return Verdict::New { lost: 0 };
         };
         if seq > w.highest {
             let shift = seq - w.highest;
-            w.seen = if shift >= 128 { 1 } else { (w.seen << shift) | 1 };
+            w.seen = if shift >= 128 {
+                1
+            } else {
+                (w.seen << shift) | 1
+            };
             w.highest = seq;
             Verdict::New { lost: shift - 1 }
         } else {
@@ -252,7 +293,12 @@ pub struct Bucket {
 
 impl Bucket {
     pub fn new(rate_per_s: f64, burst: f64) -> Self {
-        Bucket { rate: rate_per_s.max(1.0), burst: burst.max(1.0), tokens: burst.max(1.0), last: std::time::Instant::now() }
+        Bucket {
+            rate: rate_per_s.max(1.0),
+            burst: burst.max(1.0),
+            tokens: burst.max(1.0),
+            last: std::time::Instant::now(),
+        }
     }
     /// Take one token; returns how long to wait before sending.
     pub fn take(&mut self) -> std::time::Duration {
@@ -284,7 +330,10 @@ mod tests {
         assert_eq!(d0[0], VERSION);
         assert_eq!(d0.len(), HEADER + 10 + TAG);
         let o = open(&aead(), &d1).unwrap();
-        assert_eq!((o.prefix, o.seq, o.payload.as_slice()), (0xdead_beef, 1, &b"b value=2\n"[..]));
+        assert_eq!(
+            (o.prefix, o.seq, o.payload.as_slice()),
+            (0xdead_beef, 1, &b"b value=2\n"[..])
+        );
         assert_eq!(open(&aead(), &d0).unwrap().seq, 0);
     }
 
@@ -309,7 +358,10 @@ mod tests {
     fn nonces_differ_per_datagram_and_prefix() {
         let mut a = Sealer::with_prefix(aead(), 1);
         let mut b = Sealer::with_prefix(aead(), 2);
-        let n: Vec<_> = [a.seal(b"p"), a.seal(b"p"), b.seal(b"p"), b.seal(b"p")].iter().map(|d| d[1..13].to_vec()).collect();
+        let n: Vec<_> = [a.seal(b"p"), a.seal(b"p"), b.seal(b"p"), b.seal(b"p")]
+            .iter()
+            .map(|d| d[1..13].to_vec())
+            .collect();
         for i in 0..4 {
             for j in i + 1..4 {
                 assert_ne!(n[i], n[j]);
@@ -349,7 +401,10 @@ mod tests {
         assert!(b.take().is_zero());
         assert!(b.take().is_zero());
         let w = b.take();
-        assert!(w > std::time::Duration::from_millis(5) && w <= std::time::Duration::from_millis(11), "{w:?}");
+        assert!(
+            w > std::time::Duration::from_millis(5) && w <= std::time::Duration::from_millis(11),
+            "{w:?}"
+        );
     }
 
     #[test]

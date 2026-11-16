@@ -28,7 +28,10 @@ pub struct CpuWindow {
 
 impl CpuWindow {
     pub fn new(span_secs: f64) -> Self {
-        CpuWindow { span: span_secs, s: VecDeque::new() }
+        CpuWindow {
+            span: span_secs,
+            s: VecDeque::new(),
+        }
     }
     pub fn push(&mut self, t: f64, cpu: f64) {
         self.s.push_back((t, cpu));
@@ -63,10 +66,23 @@ pub fn next_delay_ms(prev: u64, share: f64, target: f64) -> u64 {
 
 /// History cache cap so that the total relay RSS lands on `target`: everything that is not cache
 /// stays, the cache gets the rest, never less than `floor` and never more than `ceiling` (0 = none).
-pub fn cache_cap(rss_total: usize, cache_bytes: usize, target: usize, floor: usize, ceiling: usize) -> usize {
+pub fn cache_cap(
+    rss_total: usize,
+    cache_bytes: usize,
+    target: usize,
+    floor: usize,
+    ceiling: usize,
+) -> usize {
     let base = rss_total.saturating_sub(cache_bytes);
-    let cap = target.saturating_sub(RAM_MARGIN).saturating_sub(base).max(floor);
-    if ceiling > 0 { cap.min(ceiling).max(floor.min(ceiling)) } else { cap }
+    let cap = target
+        .saturating_sub(RAM_MARGIN)
+        .saturating_sub(base)
+        .max(floor);
+    if ceiling > 0 {
+        cap.min(ceiling).max(floor.min(ceiling))
+    } else {
+        cap
+    }
 }
 
 /// Cumulative CPU seconds (utime + stime) from the text of `/proc/<pid>/stat`.
@@ -84,26 +100,42 @@ pub fn parse_status(st: &str) -> Option<(String, u32, usize)> {
     let get = |k: &str| st.lines().find_map(|l| l.strip_prefix(k)).map(str::trim);
     let name = get("Name:")?.to_string();
     let uid = get("Uid:")?.split_whitespace().next()?.parse().ok()?;
-    let rss = get("VmRSS:").and_then(|v| v.split_whitespace().next()?.parse::<usize>().ok()).unwrap_or(0) * 1024;
+    let rss = get("VmRSS:")
+        .and_then(|v| v.split_whitespace().next()?.parse::<usize>().ok())
+        .unwrap_or(0)
+        * 1024;
     Some((name, uid, rss))
 }
 
 /// Cumulative CPU seconds and RSS bytes of this process and the user's Mosquitto processes.
 pub fn sample() -> (f64, usize) {
     let me = std::process::id().to_string();
-    let uid = std::fs::read_to_string("/proc/self/status").ok().and_then(|s| parse_status(&s)).map(|t| t.1);
+    let uid = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| parse_status(&s))
+        .map(|t| t.1);
     let (mut cpu, mut rss) = (0.0, 0usize);
-    let Ok(rd) = std::fs::read_dir("/proc") else { return (0.0, 0) };
+    let Ok(rd) = std::fs::read_dir("/proc") else {
+        return (0.0, 0);
+    };
     for e in rd.flatten() {
         let pid = e.file_name().to_string_lossy().into_owned();
         if !pid.bytes().all(|b| b.is_ascii_digit()) {
             continue;
         }
-        let Some((name, u, r)) = std::fs::read_to_string(format!("/proc/{pid}/status")).ok().and_then(|s| parse_status(&s)) else { continue };
+        let Some((name, u, r)) = std::fs::read_to_string(format!("/proc/{pid}/status"))
+            .ok()
+            .and_then(|s| parse_status(&s))
+        else {
+            continue;
+        };
         if Some(u) != uid || !(pid == me || name.starts_with("mosquitto")) {
             continue;
         }
-        if let Some(c) = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok().and_then(|s| parse_stat_cpu(&s)) {
+        if let Some(c) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|s| parse_stat_cpu(&s))
+        {
             cpu += c;
             rss += r;
         }
@@ -173,20 +205,36 @@ mod tests {
     fn cache_takes_the_rest_of_the_ram() {
         let mib = 1 << 20;
         // 20 MiB relay without cache, target 240: cache 212 MiB (8 MiB margin).
-        assert_eq!(cache_cap(20 * mib + 50 * mib, 50 * mib, 240 * mib, 16 * mib, 0), 212 * mib);
+        assert_eq!(
+            cache_cap(20 * mib + 50 * mib, 50 * mib, 240 * mib, 16 * mib, 0),
+            212 * mib
+        );
         // Over the target the cache shrinks, but not below the floor.
-        assert_eq!(cache_cap(300 * mib, 100 * mib, 240 * mib, 16 * mib, 0), 32 * mib);
-        assert_eq!(cache_cap(400 * mib, 100 * mib, 240 * mib, 16 * mib, 0), 16 * mib);
+        assert_eq!(
+            cache_cap(300 * mib, 100 * mib, 240 * mib, 16 * mib, 0),
+            32 * mib
+        );
+        assert_eq!(
+            cache_cap(400 * mib, 100 * mib, 240 * mib, 16 * mib, 0),
+            16 * mib
+        );
         // A ceiling wins over free RAM.
-        assert_eq!(cache_cap(20 * mib, 0, 240 * mib, 16 * mib, 100 * mib), 100 * mib);
+        assert_eq!(
+            cache_cap(20 * mib, 0, 240 * mib, 16 * mib, 100 * mib),
+            100 * mib
+        );
     }
 
     #[test]
     fn proc_parsing() {
-        let stat = "123 (mosquitto x) y) S 1 1 1 0 -1 4194560 100 0 0 0 250 50 0 0 20 0 1 0 5 1000 100";
+        let stat =
+            "123 (mosquitto x) y) S 1 1 1 0 -1 4194560 100 0 0 0 250 50 0 0 20 0 1 0 5 1000 100";
         assert_eq!(parse_stat_cpu(stat), Some(3.0));
         let st = "Name:\tmosquitto\nUid:\t1000\t1000\t1000\t1000\nVmRSS:\t   6144 kB\n";
-        assert_eq!(parse_status(st), Some(("mosquitto".into(), 1000, 6144 * 1024)));
+        assert_eq!(
+            parse_status(st),
+            Some(("mosquitto".into(), 1000, 6144 * 1024))
+        );
     }
 
     #[test]
