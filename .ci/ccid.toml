@@ -1,0 +1,27 @@
+schema = 1
+project = "cmqt"
+
+[checks.rust]
+kind = "cargo"
+actions = ["fmt", "test", "clippy"]
+all_targets = true
+
+# The offline vendored build of the committed Cargo.lock (flake.nix): a stale lock fails here.
+[checks.native]
+kind = "nix"
+mode = "native"
+
+[render]
+render_schema = 3
+
+[jobs.verify]
+scheduler = "forgejo"
+runs_on = "linux"
+checks = ["rust", "native"]
+workflow = "ci"
+command = ["ccid:run-declared-checks"]
+
+[runtime]
+tools = []
+
+[toolchain]

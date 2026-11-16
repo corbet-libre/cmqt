@@ -1,5 +1,9 @@
 # cmqt
 
+<!-- ccid:security:begin (rendered by ccid render; do not edit by hand) -->
+**Security and dependencies:** watched by Renovate (with OSV vulnerability alerts); an update is merged only when its tests pass. See the [security policy](SECURITY.md).
+<!-- ccid:security:end -->
+
 The Corbet status board over MQTT: a server that turns cgrf dashboards and
 VictoriaMetrics results into retained MQTT topics, a small library with the
 payload types, and a static browser client.
